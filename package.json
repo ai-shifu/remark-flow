@@ -1,6 +1,6 @@
 {
   "name": "remark-flow",
-  "version": "1.0.0-alpha.3",
+  "version": "1.0.0-alpha.7",
   "description": "Remark plugins for custom button and variable syntax transformation",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -20,7 +20,6 @@
     "remark",
     "remark-plugin",
     "markdown",
-    "custom-button",
     "custom-variable",
     "unified"
   ],

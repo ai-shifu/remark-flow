@@ -16,7 +16,7 @@ const COMPILED_REGEXES = {
   BUTTON_VALUE: /^(.+?)\/\/(.+)$/
 }
 
-interface CustomVariableNode extends Node {
+interface CustomInteractionNode extends Node {
   data: {
     hName: string
     hProperties: {
@@ -68,33 +68,6 @@ function parseButtons(content: string): Button[] {
   }
 
   return buttons
-}
-
-/**
- * 解析纯按钮交互（无变量）
- */
-function parseButtonInteraction(content: string) {
-  // 如果内容包含不完整的变量语法，跳过处理
-  if (content.includes('%{')) {
-    return null
-  }
-  
-  if (/[|｜]/.test(content) && content) {
-    // 多按钮组：?[Button1 | Button2]
-    const buttons = parseButtons(content)
-    return {
-      buttonTexts: buttons.map(b => b.display),
-      buttonValues: buttons.map(b => b.value)
-    }
-  } else if (content) {
-    // 单按钮：?[Button1] 或 ?[Button1//id1]
-    const button = parseSingleButton(content)
-    return {
-      buttonTexts: [button.display],
-      buttonValues: [button.value]
-    }
-  }
-  return null
 }
 
 /**
@@ -166,14 +139,44 @@ function parseVariableInteraction(variableName: string, content: string) {
 }
 
 /**
+ * 解析展示按钮（非变量赋值类型）
+ */
+function parseDisplayButtons(content: string) {
+  if (!content) {
+    // 空内容：?[]
+    return {
+      buttonTexts: [''],
+      buttonValues: ['']
+    }
+  }
+
+  if (/[|｜]/.test(content)) {
+    // 多按钮：?[Continue | Cancel]
+    const buttons = parseButtons(content)
+    return {
+      buttonTexts: buttons.map(b => b.display),
+      buttonValues: buttons.map(b => b.value)
+    }
+  } else {
+    // 单按钮：?[Continue]
+    const button = parseSingleButton(content)
+    return {
+      buttonTexts: [button.display],
+      buttonValues: [button.value]
+    }
+  }
+}
+
+/**
  * 创建AST节点片段
  */
 function createSegments(
   value: string, 
   startIndex: number, 
   endIndex: number, 
-  parsedResult: any
-): Array<Literal | CustomVariableNode> {
+  parsedResult: any,
+  hName: string
+): Array<Literal | CustomInteractionNode> {
   return [
     {
       type: 'text',
@@ -182,10 +185,10 @@ function createSegments(
     {
       type: 'element',
       data: {
-        hName: 'custom-variable',
+        hName,
         hProperties: parsedResult
       }
-    } as CustomVariableNode,
+    } as CustomInteractionNode,
     {
       type: 'text',
       value: value.substring(endIndex)
@@ -193,7 +196,7 @@ function createSegments(
   ]
 }
 
-export default function remarkCustomVariable() {
+export default function remarkInteraction() {
   return (tree: Node) => {
     visit(
       tree,
@@ -214,32 +217,31 @@ export default function remarkCustomVariable() {
 
         // 第二层：变量检测
         const variableMatch = COMPILED_REGEXES.VARIABLE.exec(innerContent)
-        let parsedResult: any
-
-        if (variableMatch) {
-          // 有变量的交互
-          const variableName = variableMatch[1].trim()
-          const remainingContent = variableMatch[2].trim()
-          
-          // 检查变量名是否为空
-          if (!variableName) return
-          
-          parsedResult = parseVariableInteraction(variableName, remainingContent)
-        } else {
-          // 纯按钮交互（无变量）
-          parsedResult = parseButtonInteraction(innerContent)
-          if (!parsedResult) return // 既不是变量也不是按钮，跳过
-        }
 
         try {
-          // 创建新的节点片段
-          const segments = createSegments(value, startIndex, endIndex, parsedResult)
+          let parsedResult
+          let nodeName = 'custom-variable'
           
-          // 替换原节点
+          if (variableMatch) {
+            // 处理变量语法：?[%{{var}} ...]
+            const variableName = variableMatch[1].trim()
+            const remainingContent = variableMatch[2].trim()
+            
+            // 检查变量名是否为空或无效
+            if (!variableName) return
+            
+            parsedResult = parseVariableInteraction(variableName, remainingContent)
+            nodeName = 'custom-variable'
+          } else {
+            // 处理按钮语法：?[button]
+            parsedResult = parseDisplayButtons(innerContent)
+            nodeName = 'custom-variable'
+          }
+          
+          const segments = createSegments(value, startIndex, endIndex, parsedResult, nodeName)
           parent.children.splice(index, 1, ...segments)
-          
         } catch (error) {
-          console.warn('Failed to parse custom variable syntax:', error)
+          console.warn('Failed to parse interaction syntax:', error)
           // 如果解析失败，保持原样不处理
           return
         }

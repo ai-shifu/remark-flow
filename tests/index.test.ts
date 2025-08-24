@@ -1,10 +1,7 @@
-import { remarkCustomButton, remarkCustomVariable, remarkFlow } from '../src/index'
+import { remarkCustomVariable, remarkFlow, remarkInteraction } from '../src/index'
+import defaultExport from '../src/index'
 
 describe('index exports', () => {
-  test('should export remarkCustomButton', () => {
-    expect(typeof remarkCustomButton).toBe('function')
-  })
-
   test('should export remarkCustomVariable', () => {
     expect(typeof remarkCustomVariable).toBe('function')
   })
@@ -13,19 +10,27 @@ describe('index exports', () => {
     expect(typeof remarkFlow).toBe('function')
   })
 
+  test('should export remarkInteraction', () => {
+    expect(typeof remarkInteraction).toBe('function')
+  })
+
+  test('should export remarkInteraction as default', () => {
+    expect(defaultExport).toBe(remarkInteraction)
+  })
+
   test('exported functions should be callable', () => {
-    expect(() => remarkCustomButton()).not.toThrow()
     expect(() => remarkCustomVariable()).not.toThrow()
     expect(() => remarkFlow()).not.toThrow()
+    expect(() => remarkInteraction()).not.toThrow()
   })
 
   test('exported functions should return functions', () => {
-    const buttonPlugin = remarkCustomButton()
     const variablePlugin = remarkCustomVariable()
     const flowPlugin = remarkFlow()
+    const interactionPlugin = remarkInteraction()
     
-    expect(typeof buttonPlugin).toBe('function')
     expect(typeof variablePlugin).toBe('function')
     expect(typeof flowPlugin).toBe('function')
+    expect(typeof interactionPlugin).toBe('function')
   })
 })

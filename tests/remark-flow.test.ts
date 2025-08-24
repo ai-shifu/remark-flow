@@ -43,9 +43,10 @@ describe('remarkFlow', () => {
     expect(customNodes[0].data.hProperties.variableName).toBe('color')
     expect(customNodes[0].data.hProperties.buttonTexts).toEqual(['red', 'blue'])
     
-    // Second should be button
-    expect(customNodes[1].data.hName).toBe('custom-button')
-    expect(customNodes[1].data.hProperties.buttonText).toBe('Submit')
+    // Second should be button (now also custom-variable)
+    expect(customNodes[1].data.hName).toBe('custom-variable')
+    expect(customNodes[1].data.hProperties.buttonTexts).toEqual(['Submit'])
+    expect(customNodes[1].data.hProperties.variableName).toBeUndefined()
   })
 
   test('should process both variable and button syntax in same text', () => {
@@ -63,8 +64,9 @@ describe('remarkFlow', () => {
     expect(customNodes[0].data.hProperties.variableName).toBe('action')
     expect(customNodes[0].data.hProperties.buttonTexts).toEqual(['save'])
     
-    expect(customNodes[1].data.hName).toBe('custom-button')
-    expect(customNodes[1].data.hProperties.buttonText).toBe('Cancel')
+    expect(customNodes[1].data.hName).toBe('custom-variable')
+    expect(customNodes[1].data.hProperties.buttonTexts).toEqual(['Cancel'])
+    expect(customNodes[1].data.hProperties.variableName).toBeUndefined()
   })
 
   test('should process button syntax when no variable syntax present', () => {
@@ -76,10 +78,12 @@ describe('remarkFlow', () => {
     
     const customNodes = findCustomNodes(parentNode)
     expect(customNodes).toHaveLength(2)
-    expect(customNodes[0].data.hName).toBe('custom-button')
-    expect(customNodes[0].data.hProperties.buttonText).toBe('Submit')
-    expect(customNodes[1].data.hName).toBe('custom-button')
-    expect(customNodes[1].data.hProperties.buttonText).toBe('Cancel')
+    expect(customNodes[0].data.hName).toBe('custom-variable')
+    expect(customNodes[0].data.hProperties.buttonTexts).toEqual(['Submit'])
+    expect(customNodes[0].data.hProperties.variableName).toBeUndefined()
+    expect(customNodes[1].data.hName).toBe('custom-variable')
+    expect(customNodes[1].data.hProperties.buttonTexts).toEqual(['Cancel'])
+    expect(customNodes[1].data.hProperties.variableName).toBeUndefined()
   })
 
   test('should handle complex variable syntax', () => {
@@ -108,7 +112,7 @@ describe('remarkFlow', () => {
     expect(customNodes).toHaveLength(1)
     expect(customNodes[0].data.hName).toBe('custom-variable')
     expect(customNodes[0].data.hProperties.variableName).toBe('name')
-    expect(customNodes[0].data.hProperties.buttonTexts).toEqual([])
+    expect(customNodes[0].data.hProperties.buttonTexts).toBeUndefined()
     expect(customNodes[0].data.hProperties.placeholder).toBe('enter your name')
   })
 
@@ -123,16 +127,17 @@ describe('remarkFlow', () => {
     const customNodes = findCustomNodes(parentNode)
     expect(customNodes).toHaveLength(2)
     
-    // Find nodes by type since order might vary
-    const variableNode = customNodes.find(node => node.data.hName === 'custom-variable')
-    const buttonNode = customNodes.find(node => node.data.hName === 'custom-button')
+    // Find nodes by whether they have variableName or not
+    const variableNode = customNodes.find(node => node.data.hProperties.variableName)
+    const buttonNode = customNodes.find(node => !node.data.hProperties.variableName)
     
     expect(variableNode).toBeDefined()
     expect(variableNode.data.hProperties.variableName).toBe('color')
     expect(variableNode.data.hProperties.buttonTexts).toEqual(['红色', '蓝色'])
     
     expect(buttonNode).toBeDefined()
-    expect(buttonNode.data.hProperties.buttonText).toBe('提交')
+    expect(buttonNode.data.hProperties.buttonTexts).toEqual(['提交'])
+    expect(buttonNode.data.hProperties.variableName).toBeUndefined()
   })
 
   test('should not modify nodes without any special syntax', () => {

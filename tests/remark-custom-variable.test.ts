@@ -86,7 +86,7 @@ describe('remarkCustomVariable', () => {
     
     const props = customVariables[0].data.hProperties
     expect(props.variableName).toBe('name')
-    expect(props.buttonTexts).toEqual([])
+    expect(props.buttonTexts).toBeUndefined()
     expect(props.placeholder).toBe('enter your name')
   })
 
@@ -140,7 +140,6 @@ describe('remarkCustomVariable', () => {
     const invalidCases = [
       '?[%{variable} button]', // wrong variable syntax
       '?[%{{}} button]', // empty variable name
-      '?[%{{var}}]', // no content
     ]
 
     invalidCases.forEach(testCase => {
@@ -155,6 +154,22 @@ describe('remarkCustomVariable', () => {
     })
   })
 
+  test('should match variable with no content as placeholder-only', () => {
+    const textNode = createTextNode('Input: ?[%{{var}}]')
+    const parentNode = createParentNode([textNode])
+    
+    const plugin = remarkCustomVariable()
+    plugin(parentNode)
+    
+    const customVariables = findCustomVariableNodes(parentNode)
+    expect(customVariables).toHaveLength(1)
+    
+    const props = customVariables[0].data.hProperties
+    expect(props.variableName).toBe('var')
+    expect(props.buttonTexts).toBeUndefined()
+    expect(props.placeholder).toBe('')
+  })
+
   test('should not match whitespace only content', () => {
     const textNode = createTextNode('?[%{{var}} ]') // only whitespace content
     const parentNode = createParentNode([textNode])
@@ -166,7 +181,7 @@ describe('remarkCustomVariable', () => {
     // This actually matches as single button format, but creates empty buttonTexts
     expect(customVariables).toHaveLength(1)
     expect(customVariables[0].data.hProperties.variableName).toBe('var')
-    expect(customVariables[0].data.hProperties.buttonTexts).toEqual([])
+    expect(customVariables[0].data.hProperties.buttonTexts).toBeUndefined()
   })
 
   test('should handle variable when multiple variables in same text', () => {
@@ -177,12 +192,15 @@ describe('remarkCustomVariable', () => {
     plugin(parentNode)
     
     const customVariables = findCustomVariableNodes(parentNode)
-    // Plugin processes one match in a single text node based on priority
-    expect(customVariables).toHaveLength(1)
+    // Plugin now processes all matches in the text
+    expect(customVariables).toHaveLength(2)
     
-    // The placeholder format has higher priority, so 'size' is matched first
-    expect(customVariables[0].data.hProperties.variableName).toBe('size')
-    expect(customVariables[0].data.hProperties.placeholder).toBe('enter size')
+    // Check both variables are processed
+    expect(customVariables[0].data.hProperties.variableName).toBe('color')
+    expect(customVariables[0].data.hProperties.buttonTexts).toEqual(['red', 'blue'])
+    
+    expect(customVariables[1].data.hProperties.variableName).toBe('size')
+    expect(customVariables[1].data.hProperties.placeholder).toBe('enter size')
   })
 
   test('should handle multiple variables when in separate text nodes', () => {
@@ -216,7 +234,7 @@ describe('remarkCustomVariable', () => {
     
     const props = customVariables[0].data.hProperties
     expect(props.variableName).toBe('var')
-    expect(props.buttonTexts).toEqual([])
+    expect(props.buttonTexts).toBeUndefined()
     expect(props.placeholder).toBe('some placeholder')
   })
 
