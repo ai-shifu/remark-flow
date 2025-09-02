@@ -1,45 +1,45 @@
 import { InteractionParser, InteractionType } from '../src/interaction-parser'
 
-describe('InteractionParser 演示和测试', () => {
+describe('InteractionParser Sample and Test', () => {
   let parser: InteractionParser
 
   beforeEach(() => {
     parser = new InteractionParser()
   })
 
-  describe('parseToRemarkFormat 方法测试', () => {
-    test('测试变量语法解析', () => {
-      const result = parser.parseToRemarkFormat('?[%{{name}}...请输入姓名]')
+  describe('parseToRemarkFormat Method Test', () => {
+    test('Test Variable Syntax Parsing', () => {
+      const result = parser.parseToRemarkFormat('?[%{{name}}...Enter your name]')
       
       expect(result).toEqual({
         variableName: 'name',
-        placeholder: '请输入姓名'
+        placeholder: 'Enter your name'
       })
     })
 
-    test('测试按钮语法解析', () => {
-      const result = parser.parseToRemarkFormat('?[保存//save | 取消//cancel]')
+    test('Test Button Syntax Parsing', () => {
+      const result = parser.parseToRemarkFormat('?[Save//save | Cancel//cancel]')
       
       expect(result).toEqual({
-        buttonTexts: ['保存', '取消'],
+        buttonTexts: ['Save', 'Cancel'],
         buttonValues: ['save', 'cancel']
       })
     })
 
-    test('测试复合语法解析', () => {
-      const result = parser.parseToRemarkFormat('?[%{{color}} 红色//red | 蓝色//blue | ...自定义颜色]')
+    test('Test Composite Syntax Parsing', () => {
+      const result = parser.parseToRemarkFormat('?[%{{color}} Red//red | Blue//blue | ...Custom color]')
       
       expect(result).toEqual({
         variableName: 'color',
-        buttonTexts: ['红色', '蓝色'],
+        buttonTexts: ['Red', 'Blue'],
         buttonValues: ['red', 'blue'],
-        placeholder: '自定义颜色'
+        placeholder: 'Custom color'
       })
     })
   })
 
-  describe('parse 方法详细测试', () => {
-    test('解析结果包含类型信息', () => {
+  describe('parse Method Detailed Test', () => {
+    test('Test Result Contains Type Information', () => {
       const result = parser.parse('?[%{{action}} 确认 | 取消]')
       
       expect(result.type).toBe(InteractionType.BUTTONS_ONLY)
@@ -49,46 +49,46 @@ describe('InteractionParser 演示和测试', () => {
       }
     })
 
-    test('非变量按钮解析', () => {
-      const result = parser.parse('?[开始 | 暂停 | 停止]')
+    test('Test Non-Variable Button Parsing', () => {
+      const result = parser.parse('?[Start | Pause | Stop]')
       
       expect(result.type).toBe(InteractionType.NON_ASSIGNMENT_BUTTON)
       if (result.type === InteractionType.NON_ASSIGNMENT_BUTTON) {
         expect(result.buttons).toHaveLength(3)
-        expect(result.buttons.map(b => b.display)).toEqual(['开始', '暂停', '停止'])
+        expect(result.buttons.map(b => b.display)).toEqual(['Start', 'Pause', 'Stop'])
       }
     })
 
-    test('错误处理测试', () => {
-      const result = parser.parse('不是有效的语法')
+    test('Test Error Handling', () => {
+      const result = parser.parse('Invalid syntax')
       
       expect(result.error).toBeDefined()
       expect(result.type).toBe(null)
     })
   })
 
-  describe('实际使用场景演示', () => {
-    test('模拟用户输入场景', () => {
+  describe('Actual Usage Scenario Demo', () => {
+    test('Simulate User Input Scenario', () => {
       const testCases = [
         {
-          input: '?[%{{username}}...请输入用户名]',
+          input: '?[%{{username}}...Enter your username]',
           expected: 'TEXT_ONLY',
-          description: '纯文本输入'
+          description: 'Pure Text Input'
         },
         {
-          input: '?[%{{theme}} 浅色 | 深色]',
+          input: '?[%{{theme}} Light | Dark]',
           expected: 'BUTTONS_ONLY', 
-          description: '纯按钮选择'
+          description: 'Pure Button Selection'
         },
         {
-          input: '?[%{{size}} 小//S | 中//M | 大//L | ...其他尺寸]',
+          input: '?[%{{size}} Small//S | Medium//M | Large//L | ...Other sizes]',
           expected: 'BUTTONS_WITH_TEXT',
-          description: '按钮+文本输入'
+          description: 'Button + Text Input'
         },
         {
-          input: '?[确定 | 取消]',
+          input: '?[Confirm | Cancel]',
           expected: 'NON_ASSIGNMENT_BUTTON',
-          description: '非赋值按钮'
+          description: 'Non-Assignment Button'
         }
       ]
 

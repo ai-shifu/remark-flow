@@ -202,7 +202,7 @@ describe('remarkInteraction (Merged Plugin)', () => {
     })
 
     test('should handle Chinese separators', () => {
-      const textNode = createTextNode('选择: ?[%{{fruit}} 苹果｜香蕉｜橘子]')
+      const textNode = createTextNode('Choose: ?[%{{fruit}} Apple｜Banana｜Orange]')
       const parentNode = createParentNode([textNode])
       
       const plugin = remarkInteraction()
@@ -214,8 +214,8 @@ describe('remarkInteraction (Merged Plugin)', () => {
       
       const props = customNodes[0].data.hProperties
       expect(props.variableName).toBe('fruit')
-      expect(props.buttonTexts).toEqual(['苹果', '香蕉', '橘子'])
-      expect(props.buttonValues).toEqual(['苹果', '香蕉', '橘子'])
+      expect(props.buttonTexts).toEqual(['Apple', 'Banana', 'Orange'])
+      expect(props.buttonValues).toEqual(['Apple', 'Banana', 'Orange'])
     })
 
     test('should not modify text without interaction syntax', () => {
