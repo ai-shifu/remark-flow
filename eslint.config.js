@@ -7,7 +7,7 @@ const prettierConfig = require('eslint-config-prettier');
 module.exports = [
   js.configs.recommended,
   {
-    files: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],
+    files: ['src/**/*.ts', 'src/**/*.tsx','src/**/*.js', 'src/**/*.jsx'],
     languageOptions: {
       parser: typescriptParser,
       parserOptions: {
@@ -43,8 +43,13 @@ module.exports = [
     },
   },
   {
-    files: ['**/*.test.ts', '**/*.test.tsx', '**/__tests__/**/*', '__mocks__/**/*'],
+    files: ['**/*.test.ts', '**/*.test.tsx', 'tests/**/*', '**/__tests__/**/*', '__mocks__/**/*'],
     languageOptions: {
+      parser: typescriptParser,
+      parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+      },
       globals: {
         console: 'readonly',
         process: 'readonly',
@@ -58,7 +63,21 @@ module.exports = [
         jest: 'readonly',
       },
     },
+    plugins: {
+      '@typescript-eslint': typescript,
+      prettier: prettier,
+    },
     rules: {
+      ...typescript.configs.recommended.rules,
+      ...prettierConfig.rules,
+      'prettier/prettier': 'error',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+        },
+      ],
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-non-null-assertion': 'off',
       'no-console': 'off',
