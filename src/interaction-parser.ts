@@ -9,10 +9,10 @@
 
 // Interaction input type enumeration
 export enum InteractionType {
-  TEXT_ONLY = "text_only", // Pure text input: ?[%{{var}}...question]
-  BUTTONS_ONLY = "buttons_only", // Pure button group: ?[%{{var}} option1|option2]
-  BUTTONS_WITH_TEXT = "buttons_with_text", // Button group + text: ?[%{{var}} option1|option2|...question]
-  NON_ASSIGNMENT_BUTTON = "non_assignment_button", // Non-assignment button: ?[Continue] or ?[Continue|Cancel]
+  TEXT_ONLY = 'text_only', // Pure text input: ?[%{{var}}...question]
+  BUTTONS_ONLY = 'buttons_only', // Pure button group: ?[%{{var}} option1|option2]
+  BUTTONS_WITH_TEXT = 'buttons_with_text', // Button group + text: ?[%{{var}} option1|option2|...question]
+  NON_ASSIGNMENT_BUTTON = 'non_assignment_button', // Non-assignment button: ?[Continue] or ?[Continue|Cancel]
 }
 
 // Pre-compiled regex constants
@@ -100,7 +100,7 @@ export class InteractionParser {
       const innerContent = this._layer1ValidateFormat(content);
       if (innerContent === null) {
         return this._createErrorResult(
-          `Invalid interaction format: ${content}`,
+          `Invalid interaction format: ${content}`
         );
       }
 
@@ -112,14 +112,14 @@ export class InteractionParser {
       if (hasVariable) {
         return this._layer3ParseVariableInteraction(
           variableName!,
-          remainingContent,
+          remainingContent
         );
       } else {
         return this._layer3ParseDisplayButtons(innerContent);
       }
     } catch (error) {
       return this._createErrorResult(
-        `Parsing error: ${error instanceof Error ? error.message : "Unknown error"}`,
+        `Parsing error: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
   }
@@ -145,19 +145,17 @@ export class InteractionParser {
       // Non-assignment button
       const nonAssignmentResult = result as NonAssignmentButtonResult;
       remarkResult.buttonTexts = nonAssignmentResult.buttons.map(
-        (b) => b.display,
+        b => b.display
       );
-      remarkResult.buttonValues = nonAssignmentResult.buttons.map(
-        (b) => b.value,
-      );
+      remarkResult.buttonValues = nonAssignmentResult.buttons.map(b => b.value);
     } else if (result.type !== null) {
       // Variable interaction
       const variableResult = result as VariableInteractionResult;
       remarkResult.variableName = variableResult.variable;
 
       if (variableResult.buttons) {
-        remarkResult.buttonTexts = variableResult.buttons.map((b) => b.display);
-        remarkResult.buttonValues = variableResult.buttons.map((b) => b.value);
+        remarkResult.buttonTexts = variableResult.buttons.map(b => b.display);
+        remarkResult.buttonValues = variableResult.buttons.map(b => b.value);
       }
 
       if (variableResult.question !== undefined) {
@@ -198,7 +196,7 @@ export class InteractionParser {
    * @returns [hasVariable, variableName, remainingContent]
    */
   private _layer2DetectVariable(
-    innerContent: string,
+    innerContent: string
   ): [boolean, string | null, string] {
     const match = COMPILED_REGEXES.LAYER2_VARIABLE.exec(innerContent);
 
@@ -222,7 +220,7 @@ export class InteractionParser {
    */
   private _layer3ParseVariableInteraction(
     variableName: string,
-    content: string,
+    content: string
   ): VariableInteractionResult {
     // Detect if there's ... separator
     const ellipsisMatch = COMPILED_REGEXES.LAYER3_ELLIPSIS.exec(content);
@@ -284,7 +282,7 @@ export class InteractionParser {
         return {
           type: InteractionType.TEXT_ONLY,
           variable: variableName,
-          question: "",
+          question: '',
         };
       }
     }
@@ -297,13 +295,13 @@ export class InteractionParser {
    * @returns Parse result
    */
   private _layer3ParseDisplayButtons(
-    content: string,
+    content: string
   ): NonAssignmentButtonResult {
     if (!content) {
       // Empty content: ?[]
       return {
         type: InteractionType.NON_ASSIGNMENT_BUTTON,
-        buttons: [{ display: "", value: "" }],
+        buttons: [{ display: '', value: '' }],
       };
     }
 
@@ -394,7 +392,7 @@ export class InteractionParser {
  * @returns [interaction type, parsed data]
  */
 export function parseInteractionFormat(
-  content: string,
+  content: string
 ): [InteractionType, any] {
   // Use new layered parser
   const parser = new InteractionParser();

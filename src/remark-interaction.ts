@@ -1,9 +1,9 @@
-import type { Literal, Node, Parent } from "unist";
-import { visit } from "unist-util-visit";
+import type { Literal, Node, Parent } from 'unist';
+import { visit } from 'unist-util-visit';
 import {
   InteractionParser,
   type RemarkCompatibleResult,
-} from "./interaction-parser";
+} from './interaction-parser';
 
 interface CustomInteractionNode extends Node {
   data: {
@@ -20,22 +20,22 @@ function createSegments(
   startIndex: number,
   endIndex: number,
   parsedResult: RemarkCompatibleResult,
-  hName: string,
+  hName: string
 ): Array<Literal | CustomInteractionNode> {
   return [
     {
-      type: "text",
+      type: 'text',
       value: value.substring(0, startIndex),
     } as Literal,
     {
-      type: "element",
+      type: 'element',
       data: {
         hName,
         hProperties: parsedResult,
       },
     } as CustomInteractionNode,
     {
-      type: "text",
+      type: 'text',
       value: value.substring(endIndex),
     } as Literal,
   ];
@@ -48,7 +48,7 @@ export default function remarkInteraction() {
 
     visit(
       tree,
-      "text",
+      'text',
       (node: Literal, index: number | null, parent: Parent | null) => {
         // Input validation
         if (index === null || parent === null) return;
@@ -73,15 +73,15 @@ export default function remarkInteraction() {
               startIndex,
               endIndex,
               parsedResult,
-              "custom-variable",
+              'custom-variable'
             );
             parent.children.splice(index, 1, ...segments);
           } catch (error) {
-            console.warn("Failed to parse interaction syntax:", error);
+            console.warn('Failed to parse interaction syntax:', error);
             // Keep original if parsing fails
           }
         }
-      },
+      }
     );
   };
 }

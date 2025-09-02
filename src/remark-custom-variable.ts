@@ -1,9 +1,9 @@
-import { visit } from "unist-util-visit";
-import type { Node, Parent, Literal } from "unist";
+import { visit } from 'unist-util-visit';
+import type { Node, Parent, Literal } from 'unist';
 import {
   InteractionParser,
   type RemarkCompatibleResult,
-} from "./interaction-parser";
+} from './interaction-parser';
 
 interface CustomVariableNode extends Node {
   data: {
@@ -20,22 +20,22 @@ function createSegments(
   startIndex: number,
   endIndex: number,
   parsedResult: RemarkCompatibleResult,
-  hName: string,
+  hName: string
 ): Array<Literal | CustomVariableNode> {
   return [
     {
-      type: "text",
+      type: 'text',
       value: value.substring(0, startIndex),
     } as Literal,
     {
-      type: "element",
+      type: 'element',
       data: {
         hName,
         hProperties: parsedResult,
       },
     } as CustomVariableNode,
     {
-      type: "text",
+      type: 'text',
       value: value.substring(endIndex),
     } as Literal,
   ];
@@ -48,7 +48,7 @@ export default function remarkCustomVariable() {
 
     visit(
       tree,
-      "text",
+      'text',
       (node: Literal, index: number | null, parent: Parent | null) => {
         // Input validation
         if (index === null || parent === null) return;
@@ -67,13 +67,13 @@ export default function remarkCustomVariable() {
           try {
             // Check for invalid variable syntax
             const innerContent = match[1];
-            if (innerContent.includes("%{")) {
-              if (!innerContent.includes("%{{")) {
+            if (innerContent.includes('%{')) {
+              if (!innerContent.includes('%{{')) {
                 // Contains invalid variable syntax %{variable} instead of %{{variable}}
                 return;
               }
               // Check for empty variable name %{{}}
-              if (innerContent.includes("%{{}}")) {
+              if (innerContent.includes('%{{}}')) {
                 return;
               }
             }
@@ -87,15 +87,15 @@ export default function remarkCustomVariable() {
               startIndex,
               endIndex,
               parsedResult,
-              "custom-variable",
+              'custom-variable'
             );
             parent.children.splice(index, 1, ...segments);
           } catch (error) {
-            console.warn("Failed to parse variable interaction syntax:", error);
+            console.warn('Failed to parse variable interaction syntax:', error);
             // Keep original if parsing fails
           }
         }
-      },
+      }
     );
   };
 }
