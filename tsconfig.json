@@ -6,7 +6,6 @@
     "forceConsistentCasingInFileNames": true,
     "module": "commonjs",
     "outDir": "./dist",
-    "rootDir": "./src",
     "skipLibCheck": true,
     "sourceMap": true,
     "strict": true,
@@ -18,7 +17,5 @@
   ],
   "include": [
     "src/**/*",
-    "tests/**/*",
-    "__mocks__/**/*"
   ]
 }
