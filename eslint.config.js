@@ -43,7 +43,7 @@ module.exports = [
     },
   },
   {
-    files: ['**/*.test.ts', '**/*.test.tsx', 'tests/**/*', '__mocks__/**/*'],
+    files: ['**/*.test.ts', '**/*.test.tsx', 'tests/**/*', '**/__tests__/**/*', '__mocks__/**/*'],
     languageOptions: {
       parser: typescriptParser,
       parserOptions: {
