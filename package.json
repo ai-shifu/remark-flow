@@ -3,6 +3,11 @@
   "bugs": {
     "url": "https://github.com/ai-shifu/remark-flow/issues"
   },
+  "config": {
+    "commitizen": {
+      "path": "cz-conventional-changelog"
+    }
+  },
   "dependencies": {
     "unist": "^0.0.1",
     "unist-util-visit": "^5.0.0"
@@ -70,10 +75,5 @@
     "test:watch": "jest --watch"
   },
   "types": "dist/index.d.ts",
-  "version": "1.0.0-alpha.8",
-  "config": {
-    "commitizen": {
-      "path": "cz-conventional-changelog"
-    }
-  }
+  "version": "1.0.0-alpha.8"
 }
