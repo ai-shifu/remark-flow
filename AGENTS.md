@@ -487,9 +487,22 @@ visit(tree, 'text', processVariables)  // Second pass - wasteful!
 ### Test File Structure
 
 ```
-src/
-├── __tests__/                 # Test directory (if used)
-└── *.test.ts                 # Co-located test files
+src/                          # Source code directory
+├── index.ts                  # Main exports and default plugin
+├── remark-flow.ts            # Primary plugin implementation
+├── remark-interaction.ts     # Alternative interaction plugin
+├── remark-custom-variable.ts # Variable-focused plugin
+└── interaction-parser.ts     # Core parsing engine
+
+tests/                        # Test directory (separate from src)
+├── index.test.ts             # Main integration tests
+├── remark-flow.test.ts       # Flow plugin tests
+├── remark-interaction.test.ts # Interaction plugin tests
+├── remark-custom-variable.test.ts # Variable plugin tests
+├── parser-demo.test.ts       # Parser demonstration tests
+├── chinese-variable-names.test.ts # Unicode support tests
+├── button-values-fallback.test.ts # Edge case tests
+└── test-utils.ts             # Test utility functions
 
 # Test naming patterns:
 # - Basic functionality: test_plugin_transforms_simple_buttons()
