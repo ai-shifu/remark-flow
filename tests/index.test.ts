@@ -28,7 +28,7 @@ describe('index exports', () => {
     const variablePlugin = remarkCustomVariable()
     const flowPlugin = remarkFlow()
     const interactionPlugin = remarkInteraction()
-    
+
     expect(typeof variablePlugin).toBe('function')
     expect(typeof flowPlugin).toBe('function')
     expect(typeof interactionPlugin).toBe('function')
