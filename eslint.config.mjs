@@ -18,7 +18,7 @@ const eslintConfig = [
   
   // TypeScript configuration
   {
-    files: ["**/*.ts", "**/*.js"],
+    files: ["**/*.ts", "**/*.js", "**/*.mjs"],
     languageOptions: {
       parser: typescriptParser,
       parserOptions: {
