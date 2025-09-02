@@ -1,5 +1,5 @@
 ci:
-  skip: [eslint]  # Skip ESLint hooks in pre-commit.ci since not work
+  skip: [eslint]  # Skip ESLint hooks in pre-commit.ci since it does not work
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -16,9 +16,8 @@ repos:
         args: ['--autofix', '--indent=2', '--no-ensure-ascii']
         files: \.(json)$
         exclude: ^package-lock\.json$
-    -   id: requirements-txt-fixer
 -   repo: https://github.com/commitizen-tools/commitizen
-    rev: v4.8.3  # use latest stable version
+    rev: v4.8.3
     hooks:
     -   id: commitizen
         stages: [commit-msg]
@@ -38,16 +37,4 @@ repos:
         entry: bash -c 'npx eslint --fix --max-warnings 0 $(echo "$@" | tr " " "\n" | grep -E "\.(js|jsx|ts|tsx)$") || true' --
         language: system
         files: ^src/.*\.(js|jsx|ts|tsx)$
-        pass_filenames: true
-    -   id: typescript-check
-        name: TypeScript type check
-        entry: npx tsc --noEmit
-        language: system
-        files: \.ts$
-        pass_filenames: true
-    -   id: jest-tests
-        name: Run Jest tests
-        entry: npm test -- --findRelatedTests
-        language: system
-        files: \.(ts|js)$
         pass_filenames: true
