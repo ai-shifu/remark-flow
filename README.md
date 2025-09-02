@@ -11,7 +11,7 @@ Converts button and variable input syntax into structured data that can be used 
 ## Key Features
 
 - 🎯 **Button syntax**: `?[Button Text]` → interactive button data
-- 🔧 **Variable inputs**: `?[%{{name}} options]` → form field data  
+- 🔧 **Variable inputs**: `?[%{{name}} options]` → form field data
 - 🎨 **Custom values**: `?[Display//value]` → separate display/value pairs
 - 🌍 **Unicode support**: Works with Chinese and other languages
 
@@ -79,7 +79,7 @@ const result = processor.processSync('Click: ?[Submit//save]')
 ```javascript
 {
   variableName: "size",
-  buttonTexts: ["Small", "Medium", "Large"], 
+  buttonTexts: ["Small", "Medium", "Large"],
   buttonValues: ["S", "M", "L"],
   placeholder: "custom size"
 }
@@ -96,7 +96,7 @@ Action: ?[Save//save | Cancel//cancel]
 
 // Each ?[...] becomes a structured object that you can use to:
 // - Render UI components (buttons, dropdowns, inputs)
-// - Collect user responses  
+// - Collect user responses
 // - Build interactive forms
 ```
 
@@ -118,7 +118,7 @@ All transformations use this unified format:
 interface RemarkCompatibleResult {
   variableName?: string      // For variable syntax: %{{name}}
   buttonTexts?: string[]     // Button display text
-  buttonValues?: string[]    // Corresponding button values  
+  buttonValues?: string[]    // Corresponding button values
   placeholder?: string       // Text input placeholder
 }
 ```

@@ -10,7 +10,7 @@ describe('InteractionParser 演示和测试', () => {
   describe('parseToRemarkFormat 方法测试', () => {
     test('测试变量语法解析', () => {
       const result = parser.parseToRemarkFormat('?[%{{name}}...请输入姓名]')
-      
+
       expect(result).toEqual({
         variableName: 'name',
         placeholder: '请输入姓名'
@@ -19,7 +19,7 @@ describe('InteractionParser 演示和测试', () => {
 
     test('测试按钮语法解析', () => {
       const result = parser.parseToRemarkFormat('?[保存//save | 取消//cancel]')
-      
+
       expect(result).toEqual({
         buttonTexts: ['保存', '取消'],
         buttonValues: ['save', 'cancel']
@@ -28,7 +28,7 @@ describe('InteractionParser 演示和测试', () => {
 
     test('测试复合语法解析', () => {
       const result = parser.parseToRemarkFormat('?[%{{color}} 红色//red | 蓝色//blue | ...自定义颜色]')
-      
+
       expect(result).toEqual({
         variableName: 'color',
         buttonTexts: ['红色', '蓝色'],
@@ -41,7 +41,7 @@ describe('InteractionParser 演示和测试', () => {
   describe('parse 方法详细测试', () => {
     test('解析结果包含类型信息', () => {
       const result = parser.parse('?[%{{action}} 确认 | 取消]')
-      
+
       expect(result.type).toBe(InteractionType.BUTTONS_ONLY)
       expect('variable' in result).toBe(true)
       if ('variable' in result) {
@@ -51,7 +51,7 @@ describe('InteractionParser 演示和测试', () => {
 
     test('非变量按钮解析', () => {
       const result = parser.parse('?[开始 | 暂停 | 停止]')
-      
+
       expect(result.type).toBe(InteractionType.NON_ASSIGNMENT_BUTTON)
       if (result.type === InteractionType.NON_ASSIGNMENT_BUTTON) {
         expect(result.buttons).toHaveLength(3)
@@ -61,7 +61,7 @@ describe('InteractionParser 演示和测试', () => {
 
     test('错误处理测试', () => {
       const result = parser.parse('不是有效的语法')
-      
+
       expect(result.error).toBeDefined()
       expect(result.type).toBe(null)
     })
@@ -77,7 +77,7 @@ describe('InteractionParser 演示和测试', () => {
         },
         {
           input: '?[%{{theme}} 浅色 | 深色]',
-          expected: 'BUTTONS_ONLY', 
+          expected: 'BUTTONS_ONLY',
           description: '纯按钮选择'
         },
         {

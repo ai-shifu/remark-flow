@@ -10,9 +10,9 @@ export function createParentNode(children: Node[]): Parent {
 
 export function findCustomNodes(tree: Node): any[] {
   const customNodes: any[] = []
-  
+
   function visit(node: any) {
-    if (node.type === 'element' && 
+    if (node.type === 'element' &&
         (node.data?.hName === 'custom-button' || node.data?.hName === 'custom-variable')) {
       customNodes.push(node)
     }
@@ -27,7 +27,7 @@ export function findCustomNodes(tree: Node): any[] {
 
 export function findCustomVariableNodes(tree: Node): any[] {
   const customNodes: any[] = []
-  
+
   function visit(node: any) {
     if (node.type === 'element' && node.data?.hName === 'custom-variable') {
       customNodes.push(node)
