@@ -38,7 +38,7 @@ npm run test:watch    # Run tests in watch mode (recommended)
 ```
 src/
 ├── index.ts                    # Main exports and default plugin
-├── remark-flow.ts             # Primary plugin implementation  
+├── remark-flow.ts             # Primary plugin implementation
 ├── remark-interaction.ts      # Alternative interaction plugin (default export)
 ├── remark-custom-variable.ts  # Variable-focused plugin
 └── interaction-parser.ts      # Core parsing engine (most complex)
@@ -80,7 +80,7 @@ tests/                         # Comprehensive test suite
 ### Key Features
 
 - **Button syntax**: `?[Button Text]` → interactive button data
-- **Variable inputs**: `?[%{{name}} options]` → form field data  
+- **Variable inputs**: `?[%{{name}} options]` → form field data
 - **Custom values**: `?[Display//value]` → separate display/value pairs
 - **Unicode support**: Works with Chinese and other languages
 - **Multiple choice**: `?[Yes | No | Maybe]` → multiple button options
@@ -135,7 +135,7 @@ npm run build
 
 2. **Required Test Scenarios**
    - ✅ **Basic functionality**: All syntax patterns work correctly
-   - ✅ **Unicode support**: Chinese text, emoji, special characters  
+   - ✅ **Unicode support**: Chinese text, emoji, special characters
    - ✅ **Edge cases**: Empty content, malformed syntax, boundary conditions
    - ✅ **Error handling**: Graceful degradation when parsing fails
    - ✅ **Integration**: Works with actual remark processor
@@ -147,7 +147,7 @@ npm run build
 ```
 tests/
 ├── index.test.ts                      # Integration tests for main exports
-├── remark-flow.test.ts               # Primary plugin functionality  
+├── remark-flow.test.ts               # Primary plugin functionality
 ├── remark-interaction.test.ts        # Alternative plugin tests
 ├── remark-custom-variable.test.ts    # Variable-specific functionality
 ├── parser-demo.test.ts               # Parser demonstration and examples
@@ -160,15 +160,15 @@ tests/
 ```typescript
 describe('syntax pattern group', () => {
   const processor = remark().use(remarkFlow)
-  
+
   test('handles basic case correctly', () => {
     const input = 'Test: ?[Button]'
     const result = processor.processSync(input)
-    
+
     // MUST test actual AST structure, not just string output
     const ast = processor.parse(input)
     processor.runSync(ast)
-    
+
     expect(/* find custom-variable node */).toMatchObject({
       type: 'custom-variable',
       data: {
@@ -177,25 +177,25 @@ describe('syntax pattern group', () => {
       }
     })
   })
-  
+
   test('handles unicode content', () => {
     const input = '选择: ?[%{{主题}} 浅色//light | 深色//dark]'
     // Test Chinese variable names and content
   })
-  
+
   test('gracefully handles malformed syntax', () => {
     const input = '?[incomplete'
     const result = processor.processSync(input)
-    
+
     // MUST NOT throw errors
     // MUST provide fallback behavior
     expect(() => result).not.toThrow()
   })
-  
+
   test('preserves original behavior for non-matching content', () => {
     const input = 'Regular markdown content'
     const result = processor.processSync(input)
-    
+
     // MUST NOT modify content that doesn't match patterns
     expect(result.toString()).toBe(input)
   })
@@ -221,23 +221,23 @@ const TEST_CASES = {
   simple: '?[Submit]',
   multiple: '?[Yes | No | Cancel]',
   customValues: '?[Save Changes//save | Discard//discard]',
-  
+
   // Variable assignments
   textInput: '?[%{{username}}...Enter your name]',
   buttonSelect: '?[%{{theme}} Light | Dark]',
   combined: '?[%{{size}} Small//S | Medium//M | ...custom]',
-  
+
   // Unicode and i18n
   chinese: '?[%{{用户名}}...请输入姓名]',
   emoji: '?[👍 Good | 👎 Bad | 🤔 Unsure]',
   mixed: '?[%{{语言}} English//en | 中文//zh | 日本语//ja]',
-  
+
   // Edge cases
   empty: '?[]',
   whitespace: '?[   ]',
   malformed: '?[incomplete',
   nested: '?[Button [with brackets]]',
-  
+
   // Performance test data
   large: '?[' + 'Option|'.repeat(1000) + 'Final]'
 }
@@ -273,7 +273,7 @@ This project implements a **layered parsing architecture** with strict syntax ru
 - **Invalid**: `?[]` (empty content allowed but processed differently)
 
 #### Layer 2: Variable Detection
-```regex  
+```regex
 /^%\{\{\s*([a-zA-Z_\u4e00-\u9fa5][a-zA-Z0-9_\u4e00-\u9fa5]*)\s*\}\}(.*)$/
 ```
 - **Variable names support**: Letters, numbers, underscores, Chinese characters
@@ -284,7 +284,7 @@ This project implements a **layered parsing architecture** with strict syntax ru
 1. **Simple Buttons**
    ```markdown
    ?[Submit]                    # Single button
-   ?[Yes | No | Maybe]          # Multiple buttons  
+   ?[Yes | No | Maybe]          # Multiple buttons
    ```
 
 2. **Custom Button Values**
@@ -398,12 +398,12 @@ function parseInteractionSyntax(content: string): RemarkCompatibleResult {
   } catch (error) {
     // Log for debugging but don't crash
     console.warn(`Parse error in ?[...] syntax: ${error.message}`)
-    
+
     // Return fallback result - preserve original content
-    return { 
+    return {
       placeholder: content.trim(),
       // Include error info for debugging
-      _parseError: error.message 
+      _parseError: error.message
     }
   }
 }
@@ -493,7 +493,7 @@ src/
 
 # Test naming patterns:
 # - Basic functionality: test_plugin_transforms_simple_buttons()
-# - Edge cases: test_plugin_handles_empty_syntax()  
+# - Edge cases: test_plugin_handles_empty_syntax()
 # - Integration: test_plugin_with_remark_processor()
 ```
 
@@ -505,16 +505,16 @@ import remarkFlow from '../src/index'
 
 describe('remark-flow plugin', () => {
   const processor = remark().use(remarkFlow)
-  
+
   test('transforms simple button syntax', () => {
     const input = 'Click: ?[Submit]'
     const result = processor.processSync(input)
-    
+
     expect(result.toString()).toContain('custom-variable')
     // Test the actual AST structure
     const ast = processor.parse(input)
     processor.runSync(ast)
-    
+
     // Verify custom-variable node properties
     expect(/* custom-variable node */).toMatchObject({
       type: 'custom-variable',
@@ -524,12 +524,12 @@ describe('remark-flow plugin', () => {
       }
     })
   })
-  
+
   test('handles unicode characters correctly', () => {
     const input = '选择: ?[确定//confirm | 取消//cancel]'
     // Test Chinese text handling
   })
-  
+
   test('gracefully handles malformed syntax', () => {
     const input = '?[incomplete syntax'
     // Should not throw, should handle gracefully
@@ -570,7 +570,7 @@ describe('remark-flow plugin', () => {
 
 #### Pre-Release Checklist
 - [ ] All tests pass: `npm test`
-- [ ] Code coverage ≥80%: `npm run test:coverage` 
+- [ ] Code coverage ≥80%: `npm run test:coverage`
 - [ ] TypeScript compiles: `npm run build`
 - [ ] No linting errors: `npm run lint`
 - [ ] Code properly formatted: `npm run format:check`
@@ -681,10 +681,10 @@ export type RemarkFlowPlugin = Plugin<[RemarkFlowOptions?], Root>
 ```typescript
 /**
  * Parses interaction syntax like ?[Button1 | Button2] into structured data
- * 
+ *
  * @param content - The content inside ?[...] brackets
  * @returns Structured interaction data
- * 
+ *
  * @example
  * parseInteractionSyntax('Yes//y | No//n')
  * // Returns: { buttonTexts: ['Yes', 'No'], buttonValues: ['y', 'n'] }
@@ -847,23 +847,23 @@ node test.js
 function testMemoryUsage() {
   const remark = require('remark')
   const remarkFlow = require('./dist/index.js').default
-  
+
   const processor = remark().use(remarkFlow)
   const testContent = '?[Button1 | Button2 | Button3]'.repeat(1000)
-  
+
   // Baseline
   global.gc && global.gc()
   const baseline = process.memoryUsage().heapUsed
-  
+
   // Process multiple times
   for (let i = 0; i < 100; i++) {
     processor.processSync(testContent)
   }
-  
+
   // Check memory usage
   global.gc && global.gc()
   const final = process.memoryUsage().heapUsed
-  
+
   console.log(`Memory growth: ${(final - baseline) / 1024 / 1024} MB`)
   if (final - baseline > 50 * 1024 * 1024) { // 50MB threshold
     console.warn('Possible memory leak detected!')
