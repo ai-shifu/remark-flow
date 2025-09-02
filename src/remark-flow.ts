@@ -1,5 +1,5 @@
-import type { Node } from "unist";
-import remarkInteraction from "./remark-interaction";
+import type { Node } from 'unist';
+import remarkInteraction from './remark-interaction';
 
 /**
  * remarkFlow plugin - uses unified interaction parser
