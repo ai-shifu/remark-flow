@@ -40,7 +40,7 @@ describe('InteractionParser Sample and Test', () => {
 
   describe('parse Method Detailed Test', () => {
     test('Test Result Contains Type Information', () => {
-      const result = parser.parse('?[%{{action}} 确认 | 取消]')
+      const result = parser.parse('?[%{{action}} Confirm | Cancel]')
       
       expect(result.type).toBe(InteractionType.BUTTONS_ONLY)
       expect('variable' in result).toBe(true)
