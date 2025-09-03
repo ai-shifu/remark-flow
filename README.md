@@ -395,7 +395,7 @@ function InteractiveChat() {
 
 **For advanced examples with streaming, multi-step forms, and more features, see:**
 - 📖 [markdown-flow-ui Documentation](https://github.com/ai-shifu/markdown-flow-ui#readme)
-- 🇨🇳 [中文文档](https://github.com/ai-shifu/markdown-flow-ui/blob/main/README_ZH-CN.md)
+
 
 ### 📊 Comparison: Standalone vs markdown-flow-ui
 
