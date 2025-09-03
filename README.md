@@ -23,7 +23,7 @@ Remark Flow serves as the markdown parsing foundation for the [AI-Shifu](https:/
 Unlike standard markdown parsers, Remark Flow is specifically built for **interactive conversational content**:
 
 - 🎯 **Button Syntax** - `?[Button Text]` → interactive button data
-- 🔧 **Variable Inputs** - `?[%{{name}} options]` → form field data  
+- 🔧 **Variable Inputs** - `?[%{{name}} options]` → form field data
 - 🎨 **Custom Values** - `?[Display//value]` → separate display/value pairs
 - 🌍 **Unicode Support** - Works seamlessly with Chinese and other languages
 - 🔄 **Multiple Patterns** - Support for complex interaction patterns
@@ -135,7 +135,7 @@ Remark Flow follows a modular, layered architecture:
 ```
 src/
 ├── index.ts                    # Main entry point and exports
-├── remark-flow.ts             # Primary plugin implementation  
+├── remark-flow.ts             # Primary plugin implementation
 ├── remark-interaction.ts      # Default export plugin (recommended)
 ├── remark-custom-variable.ts  # Variable-focused plugin
 └── interaction-parser.ts      # Core parsing engine with 3-layer architecture
@@ -165,7 +165,7 @@ The parser uses a sophisticated three-layer approach:
 import remarkFlow from 'remark-flow'
 
 // Named exports
-import { 
+import {
   remarkFlow,           // Main plugin
   remarkInteraction,    // Default export (same as above)
   remarkCustomVariable, // Variable-focused plugin
@@ -184,7 +184,7 @@ interface CustomVariableNode extends Node {
   data: {
     variableName?: string      // For %{{name}} syntax
     buttonTexts?: string[]     // Button display text
-    buttonValues?: string[]    // Corresponding button values  
+    buttonValues?: string[]    // Corresponding button values
     placeholder?: string       // Text input placeholder
   }
 }
@@ -280,12 +280,12 @@ import remarkFlow from 'remark-flow'
 
 function InteractiveChat() {
   const processor = remark().use(remarkFlow)
-  
+
   const content = `
   Welcome! Please select your preference:
-  
+
   ?[%{{language}} JavaScript | Python | TypeScript | Go]
-  
+
   Click to continue: ?[Let's Go!//start]
   `
 
@@ -311,7 +311,7 @@ function customRenderer() {
   return (tree: Node) => {
     visit(tree, 'custom-variable', (node: any) => {
       const { variableName, buttonTexts, buttonValues, placeholder } = node.data
-      
+
       // Transform into your custom components
       if (buttonTexts && buttonTexts.length > 0) {
         // Render as button group
@@ -337,7 +337,7 @@ export default function Interactive() {
   return (
     <MDXProvider components={{ 'custom-variable': InteractiveComponent }}>
       # Interactive Content
-      
+
       Choose your framework: ?[%{{framework}} React | Vue | Svelte]
     </MDXProvider>
   )
@@ -367,7 +367,7 @@ docker compose up -d
 ```
 
 ### Markdown Flow UI
-```bash  
+```bash
 # See the UI components that consume this parser
 git clone https://github.com/ai-shifu/markdown-flow-ui.git
 cd markdown-flow-ui
@@ -394,7 +394,7 @@ const result = processor.processSync(`
 ### Performance Optimization
 
 - ✅ **Pre-compiled regex patterns** for optimal performance
-- ✅ **Single AST traversal** minimizes processing overhead  
+- ✅ **Single AST traversal** minimizes processing overhead
 - ✅ **Memory efficient** parsing with minimal allocations
 - ✅ **Lazy evaluation** for better performance on large documents
 

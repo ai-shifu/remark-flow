@@ -23,7 +23,7 @@ Remark Flow 作为 [AI-Shifu](https://github.com/ai-shifu/ai-shifu) 对话式AI�
 与标准 markdown 解析器不同，Remark Flow 专门为**交互式对话内容**而构建：
 
 - 🎯 **按钮语法** - `?[按钮文本]` → 交互式按钮数据
-- 🔧 **变量输入** - `?[%{{name}} 选项]` → 表单字段数据  
+- 🔧 **变量输入** - `?[%{{name}} 选项]` → 表单字段数据
 - 🎨 **自定义值** - `?[显示文本//值]` → 分离的显示/值对
 - 🌍 **Unicode 支持** - 与中文和其他语言无缝兼容
 - 🔄 **多种模式** - 支持复杂的交互模式
@@ -135,7 +135,7 @@ Remark Flow 采用模块化、分层架构：
 ```
 src/
 ├── index.ts                    # 主入口点和导出
-├── remark-flow.ts             # 主插件实现  
+├── remark-flow.ts             # 主插件实现
 ├── remark-interaction.ts      # 默认导出插件（推荐）
 ├── remark-custom-variable.ts  # 专注变量的插件
 └── interaction-parser.ts      # 具有 3 层架构的核心解析引擎
@@ -165,7 +165,7 @@ src/
 import remarkFlow from 'remark-flow'
 
 // 命名导出
-import { 
+import {
   remarkFlow,           // 主插件
   remarkInteraction,    // 默认导出（与上面相同）
   remarkCustomVariable, // 专注变量的插件
@@ -184,7 +184,7 @@ interface CustomVariableNode extends Node {
   data: {
     variableName?: string      // 用于 %{{name}} 语法
     buttonTexts?: string[]     // 按钮显示文本
-    buttonValues?: string[]    // 对应的按钮值  
+    buttonValues?: string[]    // 对应的按钮值
     placeholder?: string       // 文本输入占位符
   }
 }
@@ -280,12 +280,12 @@ import remarkFlow from 'remark-flow'
 
 function InteractiveChat() {
   const processor = remark().use(remarkFlow)
-  
+
   const content = `
   欢迎！请选择您的偏好：
-  
+
   ?[%{{language}} JavaScript | Python | TypeScript | Go]
-  
+
   点击继续：?[开始吧！//start]
   `
 
@@ -311,7 +311,7 @@ function customRenderer() {
   return (tree: Node) => {
     visit(tree, 'custom-variable', (node: any) => {
       const { variableName, buttonTexts, buttonValues, placeholder } = node.data
-      
+
       // 转换为您的自定义组件
       if (buttonTexts && buttonTexts.length > 0) {
         // 渲染为按钮组
@@ -337,7 +337,7 @@ export default function Interactive() {
   return (
     <MDXProvider components={{ 'custom-variable': InteractiveComponent }}>
       # 交互式内容
-      
+
       选择您的框架：?[%{{framework}} React | Vue | Svelte]
     </MDXProvider>
   )
@@ -367,7 +367,7 @@ docker compose up -d
 ```
 
 ### Markdown Flow UI
-```bash  
+```bash
 # 查看使用此解析器的 UI 组件
 git clone https://github.com/ai-shifu/markdown-flow-ui.git
 cd markdown-flow-ui
@@ -394,7 +394,7 @@ const result = processor.processSync(`
 ### 性能优化
 
 - ✅ **预编译正则模式** 以获得最佳性能
-- ✅ **单次 AST 遍历** 最小化处理开销  
+- ✅ **单次 AST 遍历** 最小化处理开销
 - ✅ **内存高效** 解析，最小分配
 - ✅ **延迟求值** 在大型文档上获得更好性能
 
