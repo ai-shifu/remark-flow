@@ -7,7 +7,7 @@ const prettierConfig = require('eslint-config-prettier');
 module.exports = [
   js.configs.recommended,
   {
-    files: ['src/**/*.ts', 'src/**/*.tsx','src/**/*.js', 'src/**/*.jsx'],
+    files: ['src/**/*.ts', 'src/**/*.tsx', 'src/**/*.js', 'src/**/*.jsx'],
     languageOptions: {
       parser: typescriptParser,
       parserOptions: {
@@ -43,7 +43,13 @@ module.exports = [
     },
   },
   {
-    files: ['**/*.test.ts', '**/*.test.tsx', 'tests/**/*', '**/__tests__/**/*', '__mocks__/**/*'],
+    files: [
+      '**/*.test.ts',
+      '**/*.test.tsx',
+      'tests/**/*',
+      '**/__tests__/**/*',
+      '__mocks__/**/*',
+    ],
     languageOptions: {
       parser: typescriptParser,
       parserOptions: {

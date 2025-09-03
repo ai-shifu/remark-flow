@@ -2,11 +2,11 @@
   <h1>Remark Flow</h1>
   <p><strong>Transform markdown into interactive conversational experiences</strong></p>
 
-  English | [简体中文](README_ZH-CN.md)
+English | [简体中文](README_ZH-CN.md)
 
-  [![npm version](https://badge.fury.io/js/remark-flow.svg)](https://badge.fury.io/js/remark-flow)
-  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-  [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
+[![npm version](https://badge.fury.io/js/remark-flow.svg)](https://badge.fury.io/js/remark-flow)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 
 </div>
 
@@ -40,78 +40,89 @@ npm install remark-flow
 ### Basic Usage
 
 ```javascript
-import { remark } from 'remark'
-import remarkFlow from 'remark-flow'
+import { remark } from 'remark';
+import remarkFlow from 'remark-flow';
 
-const processor = remark().use(remarkFlow)
+const processor = remark().use(remarkFlow);
 
 const markdown = `
 # Welcome to Interactive Content!
 
 Choose your preference: ?[Option A | Option B | Option C]
 Enter your name: ?[%{{username}}...Please enter your name]
-`
+`;
 
-const result = processor.processSync(markdown)
+const result = processor.processSync(markdown);
 // Each ?[...] becomes a structured custom-variable node in the AST
 ```
 
 ### Advanced Usage
 
 ```javascript
-import { unified } from 'unified'
-import remarkParse from 'remark-parse'
-import remarkFlow from 'remark-flow'
-import remarkStringify from 'remark-stringify'
+import { unified } from 'unified';
+import remarkParse from 'remark-parse';
+import remarkFlow from 'remark-flow';
+import remarkStringify from 'remark-stringify';
 
 const processor = unified()
   .use(remarkParse)
   .use(remarkFlow)
-  .use(remarkStringify)
+  .use(remarkStringify);
 
 const result = processor.processSync(`
 Select theme: ?[%{{theme}} Light//light | Dark//dark | ...custom]
 Action: ?[Save Changes//save | Cancel//cancel]
-`)
+`);
 ```
 
 ## 🧩 Supported Syntax Patterns
 
 ### 1. Simple Buttons
+
 ```markdown
 ?[Submit]
 ?[Continue | Cancel]
 ?[Yes | No | Maybe]
 ```
+
 **Output:** `{ buttonTexts: ["Yes", "No", "Maybe"], buttonValues: ["Yes", "No", "Maybe"] }`
 
 ### 2. Custom Button Values
+
 ```markdown
 ?[Save Changes//save-action]
 ?[确定//confirm | 取消//cancel]
 ```
+
 **Output:** `{ buttonTexts: ["Save Changes"], buttonValues: ["save-action"] }`
 
 ### 3. Variable Text Input
+
 ```markdown
 ?[%{{username}}...Enter your name]
 ?[%{{age}}...How old are you?]
 ?[%{{comment}}...]
 ```
+
 **Output:** `{ variableName: "username", placeholder: "Enter your name" }`
 
 ### 4. Variable Button Selection
+
 ```markdown
 ?[%{{theme}} Light | Dark]
 ?[%{{size}} Small//S | Medium//M | Large//L]
 ```
+
 **Output:** `{ variableName: "theme", buttonTexts: ["Light", "Dark"], buttonValues: ["Light", "Dark"] }`
 
 ### 5. Combined: Buttons + Text Input
+
 ```markdown
 ?[%{{size}} Small//S | Medium//M | Large//L | ...custom size]
 ```
+
 **Output:**
+
 ```javascript
 {
   variableName: "size",
@@ -122,6 +133,7 @@ Action: ?[Save Changes//save | Cancel//cancel]
 ```
 
 ### 6. Unicode & International Support
+
 ```markdown
 ?[%{{语言}} English//en | 中文//zh | 日本語//ja]
 ?[%{{用户名}}...请输入您的姓名]
@@ -162,16 +174,16 @@ The parser uses a sophisticated three-layer approach:
 
 ```typescript
 // Default export (recommended)
-import remarkFlow from 'remark-flow'
+import remarkFlow from 'remark-flow';
 
 // Named exports
 import {
-  remarkFlow,           // Main plugin, functionally the same as the default export
-  remarkInteraction,    // The core plugin, which is also the default export
+  remarkFlow, // Main plugin, functionally the same as the default export
+  remarkInteraction, // The core plugin, which is also the default export
   remarkCustomVariable, // Variable-focused plugin
   createInteractionParser, // Parser factory
-  InteractionType       // Type enums
-} from 'remark-flow'
+  InteractionType, // Type enums
+} from 'remark-flow';
 ```
 
 ### Output Format
@@ -180,28 +192,28 @@ All plugins transform `?[...]` syntax into `custom-variable` AST nodes:
 
 ```typescript
 interface CustomVariableNode extends Node {
-  type: 'custom-variable'
+  type: 'custom-variable';
   data: {
-    variableName?: string      // For %{{name}} syntax
-    buttonTexts?: string[]     // Button display text
-    buttonValues?: string[]    // Corresponding button values
-    placeholder?: string       // Text input placeholder
-  }
+    variableName?: string; // For %{{name}} syntax
+    buttonTexts?: string[]; // Button display text
+    buttonValues?: string[]; // Corresponding button values
+    placeholder?: string; // Text input placeholder
+  };
 }
 ```
 
 ### Parser API
 
 ```typescript
-import { createInteractionParser, InteractionType } from 'remark-flow'
+import { createInteractionParser, InteractionType } from 'remark-flow';
 
-const parser = createInteractionParser()
+const parser = createInteractionParser();
 
 // Parse content and get detailed result
-const result = parser.parse('?[%{{theme}} Light | Dark]')
+const result = parser.parse('?[%{{theme}} Light | Dark]');
 
 // Parse and convert to remark-compatible format
-const remarkData = parser.parseToRemarkFormat('?[%{{theme}} Light | Dark]')
+const remarkData = parser.parseToRemarkFormat('?[%{{theme}} Light | Dark]');
 ```
 
 ## 🎯 Use Cases
@@ -248,15 +260,15 @@ npm run format
 
 ### Scripts
 
-| Script | Description |
-|--------|-------------|
-| `npm test` | Run test suite with Jest |
-| `npm run test:coverage` | Generate coverage reports |
-| `npm run test:watch` | Run tests in watch mode |
-| `npm run build` | Compile TypeScript to dist/ |
-| `npm run lint` | ESLint code quality checks |
-| `npm run lint:fix` | Auto-fix linting issues |
-| `npm run format` | Format code with Prettier |
+| Script                  | Description                 |
+| ----------------------- | --------------------------- |
+| `npm test`              | Run test suite with Jest    |
+| `npm run test:coverage` | Generate coverage reports   |
+| `npm run test:watch`    | Run tests in watch mode     |
+| `npm run build`         | Compile TypeScript to dist/ |
+| `npm run lint`          | ESLint code quality checks  |
+| `npm run lint:fix`      | Auto-fix linting issues     |
+| `npm run format`        | Format code with Prettier   |
 
 ### Testing
 
@@ -274,12 +286,12 @@ Comprehensive test coverage includes:
 ### With Markdown Flow UI
 
 ```jsx
-import { MarkdownFlow } from 'markdown-flow-ui'
-import { remark } from 'remark'
-import remarkFlow from 'remark-flow'
+import { MarkdownFlow } from 'markdown-flow-ui';
+import { remark } from 'remark';
+import remarkFlow from 'remark-flow';
 
 function InteractiveChat() {
-  const processor = remark().use(remarkFlow)
+  const processor = remark().use(remarkFlow);
 
   const content = `
   Welcome! Please select your preference:
@@ -287,43 +299,44 @@ function InteractiveChat() {
   ?[%{{language}} JavaScript | Python | TypeScript | Go]
 
   Click to continue: ?[Let's Go!//start]
-  `
+  `;
 
   return (
     <MarkdownFlow
       initialContentList={[{ content }]}
-      onSend={(data) => {
-        console.log('User selected:', data.buttonText)
+      onSend={data => {
+        console.log('User selected:', data.buttonText);
         // Handle user interaction
       }}
     />
-  )
+  );
 }
 ```
 
 ### With Custom Renderer
 
 ```typescript
-import { visit } from 'unist-util-visit'
-import type { Node } from 'unist'
+import { visit } from 'unist-util-visit';
+import type { Node } from 'unist';
 
 function customRenderer() {
   return (tree: Node) => {
     visit(tree, 'custom-variable', (node: any) => {
-      const { variableName, buttonTexts, buttonValues, placeholder } = node.data
+      const { variableName, buttonTexts, buttonValues, placeholder } =
+        node.data;
 
       // Transform into your custom components
       if (buttonTexts && buttonTexts.length > 0) {
         // Render as button group
-        node.type = 'html'
-        node.value = renderButtonGroup(buttonTexts, buttonValues)
+        node.type = 'html';
+        node.value = renderButtonGroup(buttonTexts, buttonValues);
       } else if (placeholder) {
         // Render as text input
-        node.type = 'html'
-        node.value = renderTextInput(variableName, placeholder)
+        node.type = 'html';
+        node.value = renderTextInput(variableName, placeholder);
       }
-    })
-  }
+    });
+  };
 }
 ```
 
@@ -331,16 +344,15 @@ function customRenderer() {
 
 ```jsx
 // pages/interactive.mdx
-import { remarkFlow } from 'remark-flow'
+import { remarkFlow } from 'remark-flow';
 
 export default function Interactive() {
   return (
     <MDXProvider components={{ 'custom-variable': InteractiveComponent }}>
-      # Interactive Content
-
-      Choose your framework: ?[%{{framework}} React | Vue | Svelte]
+      # Interactive Content Choose your framework: ?[%{{ framework }} React |
+      Vue | Svelte]
     </MDXProvider>
-  )
+  );
 }
 
 // Configure in next.config.js
@@ -348,7 +360,7 @@ const withMDX = require('@next/mdx')({
   options: {
     remarkPlugins: [remarkFlow],
   },
-})
+});
 ```
 
 ## 🌟 Integration with AI-Shifu Ecosystem
@@ -356,6 +368,7 @@ const withMDX = require('@next/mdx')({
 Remark Flow is actively used across the AI-Shifu ecosystem:
 
 ### AI-Shifu Platform
+
 ```bash
 # Experience the library in action
 git clone https://github.com/ai-shifu/ai-shifu.git
@@ -367,6 +380,7 @@ docker compose up -d
 ```
 
 ### Markdown Flow UI
+
 ```bash
 # See the UI components that consume this parser
 git clone https://github.com/ai-shifu/markdown-flow-ui.git
@@ -388,7 +402,7 @@ const result = processor.processSync(`
   Regular markdown content
   ?[incomplete syntax
   More content continues normally
-`)
+`);
 ```
 
 ### Performance Optimization
@@ -403,42 +417,40 @@ const result = processor.processSync(`
 Supports multiple separator styles for international users:
 
 ```markdown
-?[Option1 | Option2 | Option3]  # Standard pipe
+?[Option1 | Option2 | Option3] # Standard pipe
 ?[Option1 ｜ Option2 ｜ Option3] # Full-width pipe (Chinese input)
 ?[Buttons | More | ...text input] # Ellipsis separator
 ```
-
 
 ## 🔍 Troubleshooting
 
 ### Common Issues
 
-| Issue | Solution |
-|-------|----------|
+| Issue                           | Solution                                           |
+| ------------------------------- | -------------------------------------------------- |
 | Plugin not transforming content | Ensure `?[...]` syntax is exact, not `?[...](url)` |
-| Unicode characters not working | Check regex patterns support Unicode ranges |
-| Performance issues | Use pre-compiled patterns, avoid nested processing |
-| Custom values not parsing | Ensure `//` separator format: `Display//value` |
+| Unicode characters not working  | Check regex patterns support Unicode ranges        |
+| Performance issues              | Use pre-compiled patterns, avoid nested processing |
+| Custom values not parsing       | Ensure `//` separator format: `Display//value`     |
 
 ### Debug Mode
 
 ```javascript
-import { createInteractionParser } from 'remark-flow'
+import { createInteractionParser } from 'remark-flow';
 
-const parser = createInteractionParser()
-const result = parser.parse('?[test content]')
+const parser = createInteractionParser();
+const result = parser.parse('?[test content]');
 
 if (result.error) {
-  console.error('Parse error:', result.error)
+  console.error('Parse error:', result.error);
 } else {
-  console.log('Parse result:', result)
+  console.log('Parse result:', result);
 }
 ```
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
 
 ## 🙏 Acknowledgments
 

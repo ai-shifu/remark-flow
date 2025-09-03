@@ -2,11 +2,11 @@
   <h1>Remark Flow</h1>
   <p><strong>将 Markdown 转换为交互式对话体验</strong></p>
 
-  [English](README.md) | 简体中文
+[English](README.md) | 简体中文
 
-  [![npm version](https://badge.fury.io/js/remark-flow.svg)](https://badge.fury.io/js/remark-flow)
-  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-  [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
+[![npm version](https://badge.fury.io/js/remark-flow.svg)](https://badge.fury.io/js/remark-flow)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 
 </div>
 
@@ -40,78 +40,89 @@ npm install remark-flow
 ### 基础用法
 
 ```javascript
-import { remark } from 'remark'
-import remarkFlow from 'remark-flow'
+import { remark } from 'remark';
+import remarkFlow from 'remark-flow';
 
-const processor = remark().use(remarkFlow)
+const processor = remark().use(remarkFlow);
 
 const markdown = `
 # 欢迎来到交互式内容！
 
 请选择您的偏好：?[选项 A | 选项 B | 选项 C]
 输入您的姓名：?[%{{username}}...请输入您的姓名]
-`
+`;
 
-const result = processor.processSync(markdown)
+const result = processor.processSync(markdown);
 // 每个 ?[...] 都会成为 AST 中的结构化 custom-variable 节点
 ```
 
 ### 高级用法
 
 ```javascript
-import { unified } from 'unified'
-import remarkParse from 'remark-parse'
-import remarkFlow from 'remark-flow'
-import remarkStringify from 'remark-stringify'
+import { unified } from 'unified';
+import remarkParse from 'remark-parse';
+import remarkFlow from 'remark-flow';
+import remarkStringify from 'remark-stringify';
 
 const processor = unified()
   .use(remarkParse)
   .use(remarkFlow)
-  .use(remarkStringify)
+  .use(remarkStringify);
 
 const result = processor.processSync(`
 选择主题：?[%{{theme}} 浅色//light | 深色//dark | ...自定义]
 操作：?[保存更改//save | 取消//cancel]
-`)
+`);
 ```
 
 ## 🧩 支持的语法模式
 
 ### 1. 简单按钮
+
 ```markdown
 ?[提交]
 ?[继续 | 取消]
 ?[是 | 否 | 也许]
 ```
+
 **输出：** `{ buttonTexts: ["是", "否", "也许"], buttonValues: ["是", "否", "也许"] }`
 
 ### 2. 自定义按钮值
+
 ```markdown
 ?[保存更改//save-action]
 ?[确定//confirm | 取消//cancel]
 ```
+
 **输出：** `{ buttonTexts: ["保存更改"], buttonValues: ["save-action"] }`
 
 ### 3. 变量文本输入
+
 ```markdown
 ?[%{{username}}...输入您的姓名]
 ?[%{{age}}...您多大了？]
 ?[%{{comment}}...]
 ```
+
 **输出：** `{ variableName: "username", placeholder: "输入您的姓名" }`
 
 ### 4. 变量按钮选择
+
 ```markdown
 ?[%{{theme}} 浅色 | 深色]
 ?[%{{size}} 小号//S | 中号//M | 大号//L]
 ```
+
 **输出：** `{ variableName: "theme", buttonTexts: ["浅色", "深色"], buttonValues: ["浅色", "深色"] }`
 
 ### 5. 组合：按钮 + 文本输入
+
 ```markdown
 ?[%{{size}} 小号//S | 中号//M | 大号//L | ...自定义尺寸]
 ```
+
 **输出：**
+
 ```javascript
 {
   variableName: "size",
@@ -122,6 +133,7 @@ const result = processor.processSync(`
 ```
 
 ### 6. Unicode 与国际化支持
+
 ```markdown
 ?[%{{语言}} English//en | 中文//zh | 日本語//ja]
 ?[%{{用户名}}...请输入您的姓名]
@@ -162,16 +174,16 @@ src/
 
 ```typescript
 // 默认导出（推荐）
-import remarkFlow from 'remark-flow'
+import remarkFlow from 'remark-flow';
 
 // 命名导出
 import {
-  remarkFlow,           // 主插件，功能与默认导出相同
-  remarkInteraction,    // 核心插件，即默认导出
+  remarkFlow, // 主插件，功能与默认导出相同
+  remarkInteraction, // 核心插件，即默认导出
   remarkCustomVariable, // 专注变量的插件
   createInteractionParser, // 解析器工厂
-  InteractionType       // 类型枚举
-} from 'remark-flow'
+  InteractionType, // 类型枚举
+} from 'remark-flow';
 ```
 
 ### 输出格式
@@ -180,28 +192,28 @@ import {
 
 ```typescript
 interface CustomVariableNode extends Node {
-  type: 'custom-variable'
+  type: 'custom-variable';
   data: {
-    variableName?: string      // 用于 %{{name}} 语法
-    buttonTexts?: string[]     // 按钮显示文本
-    buttonValues?: string[]    // 对应的按钮值
-    placeholder?: string       // 文本输入占位符
-  }
+    variableName?: string; // 用于 %{{name}} 语法
+    buttonTexts?: string[]; // 按钮显示文本
+    buttonValues?: string[]; // 对应的按钮值
+    placeholder?: string; // 文本输入占位符
+  };
 }
 ```
 
 ### 解析器 API
 
 ```typescript
-import { createInteractionParser, InteractionType } from 'remark-flow'
+import { createInteractionParser, InteractionType } from 'remark-flow';
 
-const parser = createInteractionParser()
+const parser = createInteractionParser();
 
 // 解析内容并获得详细结果
-const result = parser.parse('?[%{{theme}} 浅色 | 深色]')
+const result = parser.parse('?[%{{theme}} 浅色 | 深色]');
 
 // 解析并转换为 remark 兼容格式
-const remarkData = parser.parseToRemarkFormat('?[%{{theme}} 浅色 | 深色]')
+const remarkData = parser.parseToRemarkFormat('?[%{{theme}} 浅色 | 深色]');
 ```
 
 ## 🎯 使用场景
@@ -248,15 +260,15 @@ npm run format
 
 ### 脚本命令
 
-| 脚本 | 描述 |
-|------|------|
-| `npm test` | 使用 Jest 运行测试套件 |
-| `npm run test:coverage` | 生成覆盖率报告 |
-| `npm run test:watch` | 在监听模式下运行测试 |
-| `npm run build` | 编译 TypeScript 到 dist/ |
-| `npm run lint` | ESLint 代码质量检查 |
-| `npm run lint:fix` | 自动修复 linting 问题 |
-| `npm run format` | 使用 Prettier 格式化代码 |
+| 脚本                    | 描述                     |
+| ----------------------- | ------------------------ |
+| `npm test`              | 使用 Jest 运行测试套件   |
+| `npm run test:coverage` | 生成覆盖率报告           |
+| `npm run test:watch`    | 在监听模式下运行测试     |
+| `npm run build`         | 编译 TypeScript 到 dist/ |
+| `npm run lint`          | ESLint 代码质量检查      |
+| `npm run lint:fix`      | 自动修复 linting 问题    |
+| `npm run format`        | 使用 Prettier 格式化代码 |
 
 ### 测试
 
@@ -274,12 +286,12 @@ npm run format
 ### 与 Markdown Flow UI 集成
 
 ```jsx
-import { MarkdownFlow } from 'markdown-flow-ui'
-import { remark } from 'remark'
-import remarkFlow from 'remark-flow'
+import { MarkdownFlow } from 'markdown-flow-ui';
+import { remark } from 'remark';
+import remarkFlow from 'remark-flow';
 
 function InteractiveChat() {
-  const processor = remark().use(remarkFlow)
+  const processor = remark().use(remarkFlow);
 
   const content = `
   欢迎！请选择您的偏好：
@@ -287,43 +299,44 @@ function InteractiveChat() {
   ?[%{{language}} JavaScript | Python | TypeScript | Go]
 
   点击继续：?[开始吧！//start]
-  `
+  `;
 
   return (
     <MarkdownFlow
       initialContentList={[{ content }]}
-      onSend={(data) => {
-        console.log('用户选择：', data.buttonText)
+      onSend={data => {
+        console.log('用户选择：', data.buttonText);
         // 处理用户交互
       }}
     />
-  )
+  );
 }
 ```
 
 ### 与自定义渲染器集成
 
 ```typescript
-import { visit } from 'unist-util-visit'
-import type { Node } from 'unist'
+import { visit } from 'unist-util-visit';
+import type { Node } from 'unist';
 
 function customRenderer() {
   return (tree: Node) => {
     visit(tree, 'custom-variable', (node: any) => {
-      const { variableName, buttonTexts, buttonValues, placeholder } = node.data
+      const { variableName, buttonTexts, buttonValues, placeholder } =
+        node.data;
 
       // 转换为您的自定义组件
       if (buttonTexts && buttonTexts.length > 0) {
         // 渲染为按钮组
-        node.type = 'html'
-        node.value = renderButtonGroup(buttonTexts, buttonValues)
+        node.type = 'html';
+        node.value = renderButtonGroup(buttonTexts, buttonValues);
       } else if (placeholder) {
         // 渲染为文本输入
-        node.type = 'html'
-        node.value = renderTextInput(variableName, placeholder)
+        node.type = 'html';
+        node.value = renderTextInput(variableName, placeholder);
       }
-    })
-  }
+    });
+  };
 }
 ```
 
@@ -331,16 +344,14 @@ function customRenderer() {
 
 ```jsx
 // pages/interactive.mdx
-import { remarkFlow } from 'remark-flow'
+import { remarkFlow } from 'remark-flow';
 
 export default function Interactive() {
   return (
     <MDXProvider components={{ 'custom-variable': InteractiveComponent }}>
-      # 交互式内容
-
-      选择您的框架：?[%{{framework}} React | Vue | Svelte]
+      # 交互式内容 选择您的框架：?[%{{ framework }} React | Vue | Svelte]
     </MDXProvider>
-  )
+  );
 }
 
 // 在 next.config.js 中配置
@@ -348,7 +359,7 @@ const withMDX = require('@next/mdx')({
   options: {
     remarkPlugins: [remarkFlow],
   },
-})
+});
 ```
 
 ## 🌟 与 AI师傅生态系统集成
@@ -356,6 +367,7 @@ const withMDX = require('@next/mdx')({
 Remark Flow 在 AI师傅生态系统中得到积极使用：
 
 ### AI师傅平台
+
 ```bash
 # 体验库的实际应用
 git clone https://github.com/ai-shifu/ai-shifu.git
@@ -367,6 +379,7 @@ docker compose up -d
 ```
 
 ### Markdown Flow UI
+
 ```bash
 # 查看使用此解析器的 UI 组件
 git clone https://github.com/ai-shifu/markdown-flow-ui.git
@@ -388,7 +401,7 @@ const result = processor.processSync(`
   常规 markdown 内容
   ?[不完整语法
   更多内容正常继续
-`)
+`);
 ```
 
 ### 性能优化
@@ -403,7 +416,7 @@ const result = processor.processSync(`
 为国际用户支持多种分隔符样式：
 
 ```markdown
-?[选项1 | 选项2 | 选项3]  # 标准竖线
+?[选项1 | 选项2 | 选项3] # 标准竖线
 ?[选项1 ｜ 选项2 ｜ 选项3] # 全角竖线（中文输入）
 ?[按钮 | 更多 | ...文本输入] # 省略号分隔符
 ```
@@ -412,25 +425,25 @@ const result = processor.processSync(`
 
 ### 常见问题
 
-| 问题 | 解决方案 |
-|------|----------|
-| 插件未转换内容 | 确保 `?[...]` 语法准确，而不是 `?[...](url)` |
-| Unicode 字符不工作 | 检查正则模式支持 Unicode 范围 |
-| 性能问题 | 使用预编译模式，避免嵌套处理 |
-| 自定义值未解析 | 确保 `//` 分隔符格式：`显示文本//值` |
+| 问题               | 解决方案                                     |
+| ------------------ | -------------------------------------------- |
+| 插件未转换内容     | 确保 `?[...]` 语法准确，而不是 `?[...](url)` |
+| Unicode 字符不工作 | 检查正则模式支持 Unicode 范围                |
+| 性能问题           | 使用预编译模式，避免嵌套处理                 |
+| 自定义值未解析     | 确保 `//` 分隔符格式：`显示文本//值`         |
 
 ### 调试模式
 
 ```javascript
-import { createInteractionParser } from 'remark-flow'
+import { createInteractionParser } from 'remark-flow';
 
-const parser = createInteractionParser()
-const result = parser.parse('?[测试内容]')
+const parser = createInteractionParser();
+const result = parser.parse('?[测试内容]');
 
 if (result.error) {
-  console.error('解析错误：', result.error)
+  console.error('解析错误：', result.error);
 } else {
-  console.log('解析结果：', result)
+  console.log('解析结果：', result);
 }
 ```
 

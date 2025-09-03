@@ -6,16 +6,16 @@ This file provides guidance to all Coding Agents such as Claude Code (claude.ai/
 
 ### Most Common Development Tasks
 
-| Priority | Task | Command | When to Use |
-|----------|------|---------|-------------|
-| **1** | Run tests | `npm test` | Before/after any changes (MANDATORY) |
-| **2** | Build TypeScript | `npm run build` | Verify compilation works |
-| **3** | Fix linting issues | `npm run lint:fix` | Before commits |
-| **4** | Format code | `npm run format` | Before commits |
-| **5** | Test with coverage | `npm run test:coverage` | Check test completeness |
-| **6** | Watch mode testing | `npm run test:watch` | During active development |
-| **7** | Lint check only | `npm run lint` | CI/validation |
-| **8** | Format check only | `npm run format:check` | CI/validation |
+| Priority | Task               | Command                 | When to Use                          |
+| -------- | ------------------ | ----------------------- | ------------------------------------ |
+| **1**    | Run tests          | `npm test`              | Before/after any changes (MANDATORY) |
+| **2**    | Build TypeScript   | `npm run build`         | Verify compilation works             |
+| **3**    | Fix linting issues | `npm run lint:fix`      | Before commits                       |
+| **4**    | Format code        | `npm run format`        | Before commits                       |
+| **5**    | Test with coverage | `npm run test:coverage` | Check test completeness              |
+| **6**    | Watch mode testing | `npm run test:watch`    | During active development            |
+| **7**    | Lint check only    | `npm run lint`          | CI/validation                        |
+| **8**    | Format check only  | `npm run format:check`  | CI/validation                        |
 
 ### Development Environment Setup
 
@@ -127,6 +127,7 @@ npm run build
 #### Test Categories and Requirements
 
 1. **Unit Tests** (`tests/*.test.ts`)
+
    ```bash
    npm test                    # Run all tests
    npm run test:watch         # Watch mode for active development
@@ -159,58 +160,58 @@ tests/
 
 ```typescript
 describe('syntax pattern group', () => {
-  const processor = remark().use(remarkFlow)
+  const processor = remark().use(remarkFlow);
 
   test('handles basic case correctly', () => {
-    const input = 'Test: ?[Button]'
-    const result = processor.processSync(input)
+    const input = 'Test: ?[Button]';
+    const result = processor.processSync(input);
 
     // MUST test actual AST structure, not just string output
-    const ast = processor.parse(input)
-    processor.runSync(ast)
+    const ast = processor.parse(input);
+    processor.runSync(ast);
 
     expect(/* find custom-variable node */).toMatchObject({
       type: 'custom-variable',
       data: {
         buttonTexts: ['Button'],
-        buttonValues: ['Button']
-      }
-    })
-  })
+        buttonValues: ['Button'],
+      },
+    });
+  });
 
   test('handles unicode content', () => {
-    const input = '选择: ?[%{{主题}} 浅色//light | 深色//dark]'
+    const input = '选择: ?[%{{主题}} 浅色//light | 深色//dark]';
     // Test Chinese variable names and content
-  })
+  });
 
   test('gracefully handles malformed syntax', () => {
-    const input = '?[incomplete'
-    const result = processor.processSync(input)
+    const input = '?[incomplete';
+    const result = processor.processSync(input);
 
     // MUST NOT throw errors
     // MUST provide fallback behavior
-    expect(() => result).not.toThrow()
-  })
+    expect(() => result).not.toThrow();
+  });
 
   test('preserves original behavior for non-matching content', () => {
-    const input = 'Regular markdown content'
-    const result = processor.processSync(input)
+    const input = 'Regular markdown content';
+    const result = processor.processSync(input);
 
     // MUST NOT modify content that doesn't match patterns
-    expect(result.toString()).toBe(input)
-  })
-})
+    expect(result.toString()).toBe(input);
+  });
+});
 ```
 
 #### Coverage Requirements by File
 
-| File | Minimum Coverage | Critical Functions |
-|------|------------------|-------------------|
-| `interaction-parser.ts` | **95%** | All parsing logic |
-| `remark-flow.ts` | **90%** | Plugin implementation |
-| `remark-interaction.ts` | **90%** | Alternative plugin |
-| `remark-custom-variable.ts` | **85%** | Variable handling |
-| `index.ts` | **100%** | Exports (simple) |
+| File                        | Minimum Coverage | Critical Functions    |
+| --------------------------- | ---------------- | --------------------- |
+| `interaction-parser.ts`     | **95%**          | All parsing logic     |
+| `remark-flow.ts`            | **90%**          | Plugin implementation |
+| `remark-interaction.ts`     | **90%**          | Alternative plugin    |
+| `remark-custom-variable.ts` | **85%**          | Variable handling     |
+| `index.ts`                  | **100%**         | Exports (simple)      |
 
 #### Test Data Standards
 
@@ -239,8 +240,8 @@ const TEST_CASES = {
   nested: '?[Button [with brackets]]',
 
   // Performance test data
-  large: '?[' + 'Option|'.repeat(1000) + 'Final]'
-}
+  large: '?[' + 'Option|'.repeat(1000) + 'Final]',
+};
 ```
 
 ### Code Quality Tools
@@ -265,44 +266,52 @@ npm run lint-staged            # Run on staged files only
 This project implements a **layered parsing architecture** with strict syntax rules:
 
 #### Layer 1: Basic Format Validation
+
 ```regex
 /\?\[([^\]]*)\](?!\()/
 ```
+
 - **Valid**: `?[content]`
 - **Invalid**: `?[content](url)` (this is markdown link syntax)
 - **Invalid**: `?[]` (empty content allowed but processed differently)
 
 #### Layer 2: Variable Detection
+
 ```regex
 /^%\{\{\s*([a-zA-Z_\u4e00-\u9fa5][a-zA-Z0-9_\u4e00-\u9fa5]*)\s*\}\}(.*)$/
 ```
+
 - **Variable names support**: Letters, numbers, underscores, Chinese characters
 - **Example**: `%{{username}}`, `%{{用户名}}`, `%{{user_id_123}}`
 
 #### Layer 3: Content Parsing Patterns
 
 1. **Simple Buttons**
+
    ```markdown
-   ?[Submit]                    # Single button
-   ?[Yes | No | Maybe]          # Multiple buttons
+   ?[Submit] # Single button
+   ?[Yes | No | Maybe] # Multiple buttons
    ```
 
 2. **Custom Button Values**
+
    ```markdown
    ?[Save Changes//save-action] # Display "Save Changes", value "save-action"
    ?[确定//confirm | 取消//cancel] # Unicode support
    ```
 
 3. **Variable Text Input**
+
    ```markdown
-   ?[%{{username}}...Enter your name]    # Pure text input
-   ?[%{{age}}...How old are you?]        # With question prompt
-   ?[%{{comment}}...]                    # Empty prompt
+   ?[%{{username}}...Enter your name] # Pure text input
+   ?[%{{age}}...How old are you?] # With question prompt
+   ?[%{{comment}}...] # Empty prompt
    ```
 
 4. **Variable Button Selection**
+
    ```markdown
-   ?[%{{theme}} Light | Dark]            # Button selection
+   ?[%{{theme}} Light | Dark] # Button selection
    ?[%{{size}} S//Small | M//Medium | L//Large] # With custom values
    ```
 
@@ -310,6 +319,7 @@ This project implements a **layered parsing architecture** with strict syntax ru
    ```markdown
    ?[%{{size}} Small//S | Medium//M | Large//L | ...custom size]
    ```
+
    - Buttons: Small(S), Medium(M), Large(L)
    - Text input: "custom size" placeholder
 
@@ -340,8 +350,8 @@ This project implements a **layered parsing architecture** with strict syntax ru
 All plugins must follow the remark plugin pattern:
 
 ```typescript
-import type { Plugin } from 'unified'
-import type { Root } from 'mdast'
+import type { Plugin } from 'unified';
+import type { Root } from 'mdast';
 
 const remarkPlugin: Plugin<[], Root> = () => {
   return (tree: Root, file) => {
@@ -349,11 +359,11 @@ const remarkPlugin: Plugin<[], Root> = () => {
     visit(tree, 'text', (node, index, parent) => {
       // Process text nodes containing ?[...] patterns
       // Replace with custom-variable nodes
-    })
-  }
-}
+    });
+  };
+};
 
-export default remarkPlugin
+export default remarkPlugin;
 ```
 
 ### AST Node Standards
@@ -362,13 +372,13 @@ Custom nodes must follow this structure:
 
 ```typescript
 interface CustomVariableNode extends Node {
-  type: 'custom-variable'
+  type: 'custom-variable';
   data: {
-    variableName?: string      // For %{{name}} syntax
-    buttonTexts?: string[]     // Button display text
-    buttonValues?: string[]    // Button values (may differ from display)
-    placeholder?: string       // Text input placeholder
-  }
+    variableName?: string; // For %{{name}} syntax
+    buttonTexts?: string[]; // Button display text
+    buttonValues?: string[]; // Button values (may differ from display)
+    placeholder?: string; // Text input placeholder
+  };
 }
 ```
 
@@ -386,6 +396,7 @@ The interaction parser handles these syntax patterns:
 ### Error Handling Standards (CRITICAL)
 
 #### Graceful Degradation Philosophy
+
 The plugin MUST NEVER crash or break markdown processing. When encountering invalid syntax, always provide fallback behavior.
 
 ```typescript
@@ -393,25 +404,25 @@ The plugin MUST NEVER crash or break markdown processing. When encountering inva
 function parseInteractionSyntax(content: string): RemarkCompatibleResult {
   try {
     // Attempt to parse
-    const result = parseWithValidation(content)
-    return result
+    const result = parseWithValidation(content);
+    return result;
   } catch (error) {
     // Log for debugging but don't crash
-    console.warn(`Parse error in ?[...] syntax: ${error.message}`)
+    console.warn(`Parse error in ?[...] syntax: ${error.message}`);
 
     // Return fallback result - preserve original content
     return {
       placeholder: content.trim(),
       // Include error info for debugging
-      _parseError: error.message
-    }
+      _parseError: error.message,
+    };
   }
 }
 
 // ❌ WRONG: Throwing errors that break processing
 function badParseFunction(content: string) {
   if (!content.includes('?[')) {
-    throw new Error('Invalid syntax') // This breaks everything!
+    throw new Error('Invalid syntax'); // This breaks everything!
   }
 }
 ```
@@ -419,6 +430,7 @@ function badParseFunction(content: string) {
 #### Required Error Handling Scenarios
 
 1. **Malformed Syntax**
+
    ```typescript
    // Input: '?[incomplete syntax'
    // Output: { placeholder: 'incomplete syntax' }
@@ -426,6 +438,7 @@ function badParseFunction(content: string) {
    ```
 
 2. **Empty or Whitespace Content**
+
    ```typescript
    // Input: '?[]' or '?[   ]'
    // Output: { buttonTexts: [''], buttonValues: [''] }
@@ -433,6 +446,7 @@ function badParseFunction(content: string) {
    ```
 
 3. **Invalid Variable Names**
+
    ```typescript
    // Input: '?[%{{123invalid}}...]'
    // Output: { placeholder: '%{{123invalid}}...' }
@@ -448,12 +462,12 @@ function badParseFunction(content: string) {
 
 #### Performance Standards
 
-| Operation | Max Time | Memory Limit | Notes |
-|-----------|----------|--------------|-------|
-| Single ?[...] parse | **<1ms** | <1KB | For typical syntax |
-| Large file (1MB) | **<100ms** | <10MB | Full document processing |
-| Regex compilation | **<5ms** | <100KB | During module load |
-| AST node creation | **<0.1ms** | <100B | Per node |
+| Operation           | Max Time   | Memory Limit | Notes                    |
+| ------------------- | ---------- | ------------ | ------------------------ |
+| Single ?[...] parse | **<1ms**   | <1KB         | For typical syntax       |
+| Large file (1MB)    | **<100ms** | <10MB        | Full document processing |
+| Regex compilation   | **<5ms**   | <100KB       | During module load       |
+| AST node creation   | **<0.1ms** | <100B        | Per node                 |
 
 #### Memory Efficiency Rules
 
@@ -463,23 +477,23 @@ const COMPILED_PATTERNS = {
   interaction: /\?\[([^\]]*)\]/g,
   variable: /%\{\{([^}]+)\}\}/,
   // Pre-compile all patterns at module level
-}
+};
 
 // ❌ INEFFICIENT: Recompiling regex in loops
 function badParsing(content: string) {
-  content.match(/\?\[([^\]]*)\]/g) // Recompiled every call!
+  content.match(/\?\[([^\]]*)\]/g); // Recompiled every call!
 }
 
 // ✅ EFFICIENT: Single AST traversal
-visit(tree, 'text', (node) => {
+visit(tree, 'text', node => {
   // Process ALL ?[...] patterns in one pass
-  const matches = node.value.matchAll(COMPILED_PATTERNS.interaction)
+  const matches = node.value.matchAll(COMPILED_PATTERNS.interaction);
   // Handle all matches for this text node
-})
+});
 
 // ❌ INEFFICIENT: Multiple traversals
-visit(tree, 'text', processButtons)     // First pass
-visit(tree, 'text', processVariables)  // Second pass - wasteful!
+visit(tree, 'text', processButtons); // First pass
+visit(tree, 'text', processVariables); // Second pass - wasteful!
 ```
 
 ## Testing Guidelines
@@ -513,41 +527,41 @@ tests/                        # Test directory (separate from src)
 ### Test Patterns
 
 ```typescript
-import { remark } from 'remark'
-import remarkFlow from '../src/index'
+import { remark } from 'remark';
+import remarkFlow from '../src/index';
 
 describe('remark-flow plugin', () => {
-  const processor = remark().use(remarkFlow)
+  const processor = remark().use(remarkFlow);
 
   test('transforms simple button syntax', () => {
-    const input = 'Click: ?[Submit]'
-    const result = processor.processSync(input)
+    const input = 'Click: ?[Submit]';
+    const result = processor.processSync(input);
 
-    expect(result.toString()).toContain('custom-variable')
+    expect(result.toString()).toContain('custom-variable');
     // Test the actual AST structure
-    const ast = processor.parse(input)
-    processor.runSync(ast)
+    const ast = processor.parse(input);
+    processor.runSync(ast);
 
     // Verify custom-variable node properties
     expect(/* custom-variable node */).toMatchObject({
       type: 'custom-variable',
       data: {
         buttonTexts: ['Submit'],
-        buttonValues: ['Submit']
-      }
-    })
-  })
+        buttonValues: ['Submit'],
+      },
+    });
+  });
 
   test('handles unicode characters correctly', () => {
-    const input = '选择: ?[确定//confirm | 取消//cancel]'
+    const input = '选择: ?[确定//confirm | 取消//cancel]';
     // Test Chinese text handling
-  })
+  });
 
   test('gracefully handles malformed syntax', () => {
-    const input = '?[incomplete syntax'
+    const input = '?[incomplete syntax';
     // Should not throw, should handle gracefully
-  })
-})
+  });
+});
 ```
 
 ### Coverage Requirements
@@ -582,6 +596,7 @@ describe('remark-flow plugin', () => {
 ### Release Process (For Maintainers)
 
 #### Pre-Release Checklist
+
 - [ ] All tests pass: `npm test`
 - [ ] Code coverage ≥80%: `npm run test:coverage`
 - [ ] TypeScript compiles: `npm run build`
@@ -592,11 +607,13 @@ describe('remark-flow plugin', () => {
 - [ ] Unicode/i18n testing completed
 
 #### Semantic Versioning Rules
+
 - **PATCH** (1.0.1): Bug fixes, performance improvements
 - **MINOR** (1.1.0): New features, backward compatible
 - **MAJOR** (2.0.0): Breaking changes to API or syntax
 
 #### Release Steps
+
 ```bash
 # 1. Version bump
 npm version patch|minor|major    # Updates package.json and creates git tag
@@ -613,6 +630,7 @@ git push origin main --tags     # Push commits and version tags
 ```
 
 #### Post-Release Validation
+
 ```bash
 # Verify package on npm
 npm view remark-flow
@@ -639,11 +657,11 @@ visit(tree, 'text', (node, index, parent) => {
   if (node.value.includes('?[')) {
     // Process all ?[...] patterns in one pass
   }
-})
+});
 
 // Bad: Multiple traversals
-visit(tree, 'text', processButtons)
-visit(tree, 'text', processVariables)  // Second traversal
+visit(tree, 'text', processButtons);
+visit(tree, 'text', processVariables); // Second traversal
 ```
 
 ### Memory Efficiency
@@ -656,16 +674,16 @@ visit(tree, 'text', processVariables)  // Second traversal
 
 ```typescript
 // Efficient regex patterns
-const INTERACTION_PATTERN = /\?\[([^\]]+)\]/g
-const VARIABLE_PATTERN = /%\{\{([^}]+)\}\}/
+const INTERACTION_PATTERN = /\?\[([^\]]+)\]/g;
+const VARIABLE_PATTERN = /%\{\{([^}]+)\}\}/;
 
 // Cache compiled patterns
 const patterns = {
   interaction: /\?\[([^\]]+)\]/g,
   variable: /%\{\{([^}]+)\}\}/,
   separator: /\s*\|\s*/,
-  customValue: /^([^/]+)\/\/([^/]+)$/
-}
+  customValue: /^([^/]+)\/\/([^/]+)$/,
+};
 ```
 
 ## API Documentation Standards
@@ -676,17 +694,17 @@ All public interfaces must be properly typed:
 
 ```typescript
 export interface InteractionData {
-  variableName?: string
-  buttonTexts?: string[]
-  buttonValues?: string[]
-  placeholder?: string
+  variableName?: string;
+  buttonTexts?: string[];
+  buttonValues?: string[];
+  placeholder?: string;
 }
 
 export interface RemarkFlowOptions {
   // Future configuration options
 }
 
-export type RemarkFlowPlugin = Plugin<[RemarkFlowOptions?], Root>
+export type RemarkFlowPlugin = Plugin<[RemarkFlowOptions?], Root>;
 ```
 
 ### JSDoc Comments
@@ -702,7 +720,7 @@ export type RemarkFlowPlugin = Plugin<[RemarkFlowOptions?], Root>
  * parseInteractionSyntax('Yes//y | No//n')
  * // Returns: { buttonTexts: ['Yes', 'No'], buttonValues: ['y', 'n'] }
  */
-export function parseInteractionSyntax(content: string): InteractionData
+export function parseInteractionSyntax(content: string): InteractionData;
 ```
 
 ## Package.json Configuration
@@ -733,15 +751,15 @@ export function parseInteractionSyntax(content: string): InteractionData
 
 ### Common Issues and Solutions
 
-| Issue | Solution |
-|-------|----------|
-| TypeScript compilation errors | Check `tsconfig.json`, ensure all files are included |
-| Jest tests not running | Verify `ts-jest` configuration in `package.json` |
-| Lint errors on commit | Run `npm run lint:fix` before committing |
-| Build output missing | Check `dist/` directory, run `npm run build` |
-| Plugin not transforming markdown | Test with simple remark processor setup |
-| Unicode characters not parsing | Test regex patterns with Unicode strings |
-| Performance issues with large files | Profile with large markdown files |
+| Issue                               | Solution                                             |
+| ----------------------------------- | ---------------------------------------------------- |
+| TypeScript compilation errors       | Check `tsconfig.json`, ensure all files are included |
+| Jest tests not running              | Verify `ts-jest` configuration in `package.json`     |
+| Lint errors on commit               | Run `npm run lint:fix` before committing             |
+| Build output missing                | Check `dist/` directory, run `npm run build`         |
+| Plugin not transforming markdown    | Test with simple remark processor setup              |
+| Unicode characters not parsing      | Test regex patterns with Unicode strings             |
+| Performance issues with large files | Profile with large markdown files                    |
 
 ### Advanced Debugging and Troubleshooting
 
@@ -782,32 +800,43 @@ node -e "const r=require('remark');const p=require('./dist/index.js').default;co
 
 #### Common Issues and Solutions
 
-| Problem | Symptoms | Solution | Prevention |
-|---------|----------|----------|------------|
-| **Tests fail after changes** | Some tests pass, others fail | Run `npm test -- --verbose` to see details | Always run tests before committing |
-| **TypeScript compilation errors** | `npm run build` fails | Check `npx tsc --noEmit` for type errors | Use IDE with TypeScript support |
-| **Linting errors** | Pre-commit hooks fail | Run `npm run lint:fix` | Use auto-format on save |
-| **Performance issues** | Slow parsing on large files | Profile with `console.time()` in parser | Test with large test files |
-| **Unicode handling problems** | Chinese text not parsing correctly | Check regex patterns support Unicode | Test with comprehensive Unicode data |
-| **Plugin not working in remark** | No transformation occurs | Verify plugin registration and exports | Test with minimal remark setup |
-| **Memory leaks** | High memory usage over time | Check for retained references | Use `process.memoryUsage()` monitoring |
-| **Regex performance** | Slow regex execution | Use pre-compiled patterns | Profile regex performance |
+| Problem                           | Symptoms                           | Solution                                   | Prevention                             |
+| --------------------------------- | ---------------------------------- | ------------------------------------------ | -------------------------------------- |
+| **Tests fail after changes**      | Some tests pass, others fail       | Run `npm test -- --verbose` to see details | Always run tests before committing     |
+| **TypeScript compilation errors** | `npm run build` fails              | Check `npx tsc --noEmit` for type errors   | Use IDE with TypeScript support        |
+| **Linting errors**                | Pre-commit hooks fail              | Run `npm run lint:fix`                     | Use auto-format on save                |
+| **Performance issues**            | Slow parsing on large files        | Profile with `console.time()` in parser    | Test with large test files             |
+| **Unicode handling problems**     | Chinese text not parsing correctly | Check regex patterns support Unicode       | Test with comprehensive Unicode data   |
+| **Plugin not working in remark**  | No transformation occurs           | Verify plugin registration and exports     | Test with minimal remark setup         |
+| **Memory leaks**                  | High memory usage over time        | Check for retained references              | Use `process.memoryUsage()` monitoring |
+| **Regex performance**             | Slow regex execution               | Use pre-compiled patterns                  | Profile regex performance              |
 
 #### Parser-Specific Debugging
 
 ```typescript
 // Enable debug mode in interaction parser
-const parser = createInteractionParser()
-const result = parser.parse('?[test content]')
+const parser = createInteractionParser();
+const result = parser.parse('?[test content]');
 
 // Add logging to understand parsing flow
-console.log('Layer 1 validation:', parser._layer1ValidateFormat(content))
-console.log('Layer 2 variable detection:', parser._layer2DetectVariable(innerContent))
-console.log('Layer 3 parsing result:', result)
+console.log('Layer 1 validation:', parser._layer1ValidateFormat(content));
+console.log(
+  'Layer 2 variable detection:',
+  parser._layer2DetectVariable(innerContent)
+);
+console.log('Layer 3 parsing result:', result);
 
 // Test specific regex patterns
-console.log('Interaction pattern match:', /\?\[([^\]]*)\](?!\()/.exec('?[test]'))
-console.log('Variable pattern match:', /^%\{\{\s*([a-zA-Z_\u4e00-\u9fa5][a-zA-Z0-9_\u4e00-\u9fa5]*)\s*\}\}(.*)$/.exec('%{{test}} content'))
+console.log(
+  'Interaction pattern match:',
+  /\?\[([^\]]*)\](?!\()/.exec('?[test]')
+);
+console.log(
+  'Variable pattern match:',
+  /^%\{\{\s*([a-zA-Z_\u4e00-\u9fa5][a-zA-Z0-9_\u4e00-\u9fa5]*)\s*\}\}(.*)$/.exec(
+    '%{{test}} content'
+  )
+);
 ```
 
 #### Performance Profiling
@@ -858,33 +887,34 @@ node test.js
 ```javascript
 // Create memory leak test
 function testMemoryUsage() {
-  const remark = require('remark')
-  const remarkFlow = require('./dist/index.js').default
+  const remark = require('remark');
+  const remarkFlow = require('./dist/index.js').default;
 
-  const processor = remark().use(remarkFlow)
-  const testContent = '?[Button1 | Button2 | Button3]'.repeat(1000)
+  const processor = remark().use(remarkFlow);
+  const testContent = '?[Button1 | Button2 | Button3]'.repeat(1000);
 
   // Baseline
-  global.gc && global.gc()
-  const baseline = process.memoryUsage().heapUsed
+  global.gc && global.gc();
+  const baseline = process.memoryUsage().heapUsed;
 
   // Process multiple times
   for (let i = 0; i < 100; i++) {
-    processor.processSync(testContent)
+    processor.processSync(testContent);
   }
 
   // Check memory usage
-  global.gc && global.gc()
-  const final = process.memoryUsage().heapUsed
+  global.gc && global.gc();
+  const final = process.memoryUsage().heapUsed;
 
-  console.log(`Memory growth: ${(final - baseline) / 1024 / 1024} MB`)
-  if (final - baseline > 50 * 1024 * 1024) { // 50MB threshold
-    console.warn('Possible memory leak detected!')
+  console.log(`Memory growth: ${(final - baseline) / 1024 / 1024} MB`);
+  if (final - baseline > 50 * 1024 * 1024) {
+    // 50MB threshold
+    console.warn('Possible memory leak detected!');
   }
 }
 
 // Run with: node --expose-gc memory-test.js
-testMemoryUsage()
+testMemoryUsage();
 ```
 
 ## Integration Examples
@@ -892,31 +922,31 @@ testMemoryUsage()
 ### Basic Usage
 
 ```typescript
-import { remark } from 'remark'
-import remarkFlow from 'remark-flow'
+import { remark } from 'remark';
+import remarkFlow from 'remark-flow';
 
-const processor = remark().use(remarkFlow)
-const result = processor.processSync('Choose: ?[Yes | No]')
+const processor = remark().use(remarkFlow);
+const result = processor.processSync('Choose: ?[Yes | No]');
 ```
 
 ### Advanced Usage
 
 ```typescript
-import { unified } from 'unified'
-import remarkParse from 'remark-parse'
-import remarkFlow from 'remark-flow'
-import remarkStringify from 'remark-stringify'
+import { unified } from 'unified';
+import remarkParse from 'remark-parse';
+import remarkFlow from 'remark-flow';
+import remarkStringify from 'remark-stringify';
 
 const processor = unified()
   .use(remarkParse)
   .use(remarkFlow)
-  .use(remarkStringify)
+  .use(remarkStringify);
 
 const markdown = `
 Select theme: ?[%{{theme}} Light//light | Dark//dark | ...custom]
-`
+`;
 
-const result = processor.processSync(markdown)
+const result = processor.processSync(markdown);
 ```
 
 ## Additional Resources
