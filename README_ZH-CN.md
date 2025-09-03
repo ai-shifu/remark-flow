@@ -238,7 +238,7 @@ function createCustomRenderer() {
             </button>`;
           })
           .join('');
-        
+
         node.type = 'html';
         node.value = `
           <div class="button-group" data-variable="${variableName}">
@@ -251,9 +251,9 @@ function createCustomRenderer() {
         node.value = `
           <div class="input-group">
             <label for="${variableName}">${placeholder}</label>
-            <input 
-              id="${variableName}" 
-              name="${variableName}" 
+            <input
+              id="${variableName}"
+              name="${variableName}"
               placeholder="${placeholder}"
               class="interactive-input"
             />
@@ -321,7 +321,7 @@ function CustomMarkdownRenderer() {
       remarkReactComponents: {
         'custom-variable': ({ node }) => {
           const { variableName, buttonTexts, buttonValues, placeholder } = node.data;
-          
+
           if (buttonTexts?.length > 0) {
             return (
               <InteractiveButton
@@ -332,7 +332,7 @@ function CustomMarkdownRenderer() {
               />
             );
           }
-          
+
           if (placeholder) {
             return (
               <InteractiveInput
@@ -342,7 +342,7 @@ function CustomMarkdownRenderer() {
               />
             );
           }
-          
+
           return null;
         },
       },
@@ -350,7 +350,7 @@ function CustomMarkdownRenderer() {
 
   const content = `
   # 交互式表单
-  
+
   选择语言：?[%{{lang}} English | 中文 | Español]
   您的姓名：?[%{{name}}...请输入您的姓名]
   操作：?[提交//submit | 重置//reset]

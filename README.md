@@ -240,7 +240,7 @@ function createCustomRenderer() {
             </button>`;
           })
           .join('');
-        
+
         node.type = 'html';
         node.value = `
           <div class="button-group" data-variable="${variableName}">
@@ -253,9 +253,9 @@ function createCustomRenderer() {
         node.value = `
           <div class="input-group">
             <label for="${variableName}">${placeholder}</label>
-            <input 
-              id="${variableName}" 
-              name="${variableName}" 
+            <input
+              id="${variableName}"
+              name="${variableName}"
               placeholder="${placeholder}"
               class="interactive-input"
             />
@@ -323,7 +323,7 @@ function CustomMarkdownRenderer() {
       remarkReactComponents: {
         'custom-variable': ({ node }) => {
           const { variableName, buttonTexts, buttonValues, placeholder } = node.data;
-          
+
           if (buttonTexts?.length > 0) {
             return (
               <InteractiveButton
@@ -334,7 +334,7 @@ function CustomMarkdownRenderer() {
               />
             );
           }
-          
+
           if (placeholder) {
             return (
               <InteractiveInput
@@ -344,7 +344,7 @@ function CustomMarkdownRenderer() {
               />
             );
           }
-          
+
           return null;
         },
       },
@@ -352,7 +352,7 @@ function CustomMarkdownRenderer() {
 
   const content = `
   # Interactive Form
-  
+
   Choose language: ?[%{{lang}} English | 中文 | Español]
   Your name: ?[%{{name}}...Enter your name]
   Action: ?[Submit//submit | Reset//reset]
