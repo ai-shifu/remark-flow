@@ -165,9 +165,9 @@ src/
 import remarkFlow from 'remark-flow'
 
 // 命名导出
-import {
-  remarkFlow,           // 主插件
-  remarkInteraction,    // 默认导出（与上面相同）
+import { 
+  remarkFlow,           // 主插件，功能与默认导出相同
+  remarkInteraction,    // 核心插件，即默认导出
   remarkCustomVariable, // 专注变量的插件
   createInteractionParser, // 解析器工厂
   InteractionType       // 类型枚举
