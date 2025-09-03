@@ -19,7 +19,7 @@
     "**/dist/**",
     ".github/**",
     "AGENTS.md",
-    "CLAUDE.md", 
+    "CLAUDE.md",
     "GEMINI.md"
   ]
 }

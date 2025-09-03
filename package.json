@@ -47,15 +47,15 @@
   ],
   "license": "MIT",
   "lint-staged": {
+    "**/*.md": [
+      "markdownlint-cli2 --fix",
+      "prettier --write"
+    ],
     "src/**/*.{css,scss,json}": [
       "prettier --write"
     ],
     "src/**/*.{js,jsx,ts,tsx,mjs,cjs}": [
       "eslint --fix --max-warnings 10",
-      "prettier --write"
-    ],
-    "**/*.md": [
-      "markdownlint-cli2 --fix",
       "prettier --write"
     ]
   },
