@@ -176,105 +176,234 @@ const result = parser.parse('?[%{{theme}} 浅色 | 深色]');
 // 解析并转换为 remark 兼容格式
 const remarkData = parser.parseToRemarkFormat('?[%{{theme}} 浅色 | 深色]');
 ```
+## 🔗 使用示例
 
-## 🎯 使用场景
+remark-flow 可以通过两种主要方式使用：
 
-**完美适用于：**
+1. **独立使用** - 解析和转换语法，然后使用自己的 UI 组件进行渲染
+2. **与 markdown-flow-ui 配合** - 使用预构建的 React 组件获得即时交互式 UI
 
-- ✅ 交互式文档和教程
-- ✅ 对话式 AI 界面（如 ChatGPT）
-- ✅ 包含用户输入的教育内容
-- ✅ 从 markdown 生成调查和表单
-- ✅ 交互式故事应用程序
-- ✅ 动态内容个性化
+### 🎯 独立使用（自定义渲染）
 
-**不适用于：**
+当独立使用 remark-flow 时，你可以解析语法并基于 AST 节点创建自己的 UI 组件。
 
-- ❌ 无交互的静态博客内容
-- ❌ 简单文档站点
-- ❌ 非交互式 markdown 处理
+#### 基础 AST 转换
 
-## 🔗 集成示例
+```typescript
+import { remark } from 'remark';
+import { visit } from 'unist-util-visit';
+import remarkFlow from 'remark-flow';
+import type { Node } from 'unist';
 
-### 与 Markdown Flow UI 集成
+const processor = remark().use(remarkFlow);
+
+const markdown = `
+# 选择您的偏好
+
+选择语言：?[%{{language}} JavaScript | Python | TypeScript | Go]
+输入姓名：?[%{{username}}...您的全名]
+操作：?[保存//save | 取消//cancel]
+`;
+
+// 解析并检查 AST
+const ast = processor.parse(markdown);
+processor.runSync(ast);
+
+// 查找 custom-variable 节点
+visit(ast, 'custom-variable', (node: any) => {
+  console.log('发现交互元素：', node.data);
+  // 输出：{ variableName: 'language', buttonTexts: ['JavaScript', 'Python', 'TypeScript', 'Go'], buttonValues: [...] }
+});
+```
+
+#### 自定义 HTML 渲染器
+
+```typescript
+import { visit } from 'unist-util-visit';
+import { remark } from 'remark';
+import remarkHtml from 'remark-html';
+
+function createCustomRenderer() {
+  return (tree: Node) => {
+    visit(tree, 'custom-variable', (node: any) => {
+      const { variableName, buttonTexts, buttonValues, placeholder } = node.data;
+
+      if (buttonTexts && buttonTexts.length > 0) {
+        // 渲染为按钮组
+        const buttonsHtml = buttonTexts
+          .map((text, i) => {
+            const value = buttonValues?.[i] || text;
+            return `<button onclick="selectOption('${variableName}', '${value}')" class="interactive-btn">
+              ${text}
+            </button>`;
+          })
+          .join('');
+        
+        node.type = 'html';
+        node.value = `
+          <div class="button-group" data-variable="${variableName}">
+            ${buttonsHtml}
+          </div>
+        `;
+      } else if (placeholder) {
+        // 渲染为文本输入
+        node.type = 'html';
+        node.value = `
+          <div class="input-group">
+            <label for="${variableName}">${placeholder}</label>
+            <input 
+              id="${variableName}" 
+              name="${variableName}" 
+              placeholder="${placeholder}"
+              class="interactive-input"
+            />
+          </div>
+        `;
+      }
+    });
+  };
+}
+
+// 与 remark 处理器一起使用
+const processor = remark()
+  .use(remarkFlow)
+  .use(createCustomRenderer)
+  .use(remarkHtml);
+
+const result = processor.processSync(markdown);
+console.log(result.toString()); // 带有自定义交互元素的 HTML
+```
+
+#### React 自定义组件
+
+```typescript
+import React from 'react';
+import { remark } from 'remark';
+import remarkReact from 'remark-react';
+import remarkFlow from 'remark-flow';
+
+// 交互元素的自定义 React 组件
+const InteractiveButton = ({ variableName, buttonTexts, buttonValues, onSelect }) => (
+  <div className="flex gap-2">
+    {buttonTexts.map((text, i) => (
+      <button
+        key={i}
+        onClick={() => onSelect(variableName, buttonValues[i])}
+        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+      >
+        {text}
+      </button>
+    ))}
+  </div>
+);
+
+const InteractiveInput = ({ variableName, placeholder, onInput }) => (
+  <div className="my-2">
+    <input
+      type="text"
+      placeholder={placeholder}
+      onChange={(e) => onInput(variableName, e.target.value)}
+      className="border border-gray-300 rounded px-3 py-2 w-full"
+    />
+  </div>
+);
+
+// 在 React 组件中使用
+function CustomMarkdownRenderer() {
+  const handleInteraction = (variableName, value) => {
+    console.log(`${variableName}: ${value}`);
+    // 处理用户交互
+  };
+
+  const processor = remark()
+    .use(remarkFlow)
+    .use(remarkReact, {
+      remarkReactComponents: {
+        'custom-variable': ({ node }) => {
+          const { variableName, buttonTexts, buttonValues, placeholder } = node.data;
+          
+          if (buttonTexts?.length > 0) {
+            return (
+              <InteractiveButton
+                variableName={variableName}
+                buttonTexts={buttonTexts}
+                buttonValues={buttonValues}
+                onSelect={handleInteraction}
+              />
+            );
+          }
+          
+          if (placeholder) {
+            return (
+              <InteractiveInput
+                variableName={variableName}
+                placeholder={placeholder}
+                onInput={handleInteraction}
+              />
+            );
+          }
+          
+          return null;
+        },
+      },
+    });
+
+  const content = `
+  # 交互式表单
+  
+  选择语言：?[%{{lang}} English | 中文 | Español]
+  您的姓名：?[%{{name}}...请输入您的姓名]
+  操作：?[提交//submit | 重置//reset]
+  `;
+
+  return <div>{processor.processSync(content).result}</div>;
+}
+```
+
+### 🎨 与 markdown-flow-ui 配合（预构建组件）
+
+使用 [markdown-flow-ui](https://github.com/ai-shifu/markdown-flow-ui) 获得完整的 React 组件库，提供即用的交互式组件。
+
+#### 基础集成
 
 ```typescript
 import { MarkdownFlow } from 'markdown-flow-ui';
-import { remark } from 'remark';
-import remarkFlow from 'remark-flow';
 
 function InteractiveChat() {
-  const processor = remark().use(remarkFlow);
-
   const content = `
-  欢迎！请选择你的偏好：
+  # 欢迎！👋
 
-  ?[%{{language}} JavaScript | Python | TypeScript | Go]
-
-  点击继续：?[开始吧！//start]
+  选择您的偏好：?[%{{language}} JavaScript | Python | TypeScript]
+  输入您的姓名：?[%{{username}}...您的全名]
+  准备开始：?[开始吧！//start]
   `;
 
   return (
     <MarkdownFlow
       initialContentList={[{ content }]}
-      onSend={data => {
-        console.log('用户选择：', data.buttonText);
+      onSend={(data) => {
+        console.log('用户交互：', data);
         // 处理用户交互
       }}
+      typingSpeed={30}
     />
   );
 }
 ```
 
-### 与自定义渲染器集成
+**更多高级示例（包括流式传输、多步骤表单等功能），请查看：**
+- 🇨🇳 [markdown-flow-ui 文档](https://github.com/ai-shifu/markdown-flow-ui/blob/main/README_ZH-CN.md)
 
-```typescript
-import { visit } from 'unist-util-visit';
-import type { Node } from 'unist';
+### 📊 对比：独立使用 vs markdown-flow-ui
 
-function customRenderer() {
-  return (tree: Node) => {
-    visit(tree, 'custom-variable', (node: any) => {
-      const { variableName, buttonTexts, buttonValues, placeholder } =
-        node.data;
-
-      // 转换为你的自定义组件
-      if (buttonTexts && buttonTexts.length > 0) {
-        // 渲染为按钮组
-        node.type = 'html';
-        node.value = renderButtonGroup(buttonTexts, buttonValues);
-      } else if (placeholder) {
-        // 渲染为文本输入
-        node.type = 'html';
-        node.value = renderTextInput(variableName, placeholder);
-      }
-    });
-  };
-}
-```
-
-### 与 Next.js 和 MDX 集成
-
-```typescript
-// pages/interactive.mdx
-import { remarkFlow } from 'remark-flow';
-
-export default function Interactive() {
-  return (
-    <MDXProvider components={{ 'custom-variable': InteractiveComponent }}>
-      # 交互式内容 选择你的框架：?[%{{framework}} React |
-      Vue | Svelte]
-    </MDXProvider>
-  );
-}
-
-// 在 next.config.js 中配置
-const withMDX = require('@next/mdx')({
-  options: {
-    remarkPlugins: [remarkFlow],
-  },
-});
-```
+| 方面 | 独立使用 | 配合 markdown-flow-ui |
+|------|----------|----------------------|
+| **设置复杂度** | 中等 - 需要自定义渲染 | 低 - 预构建组件 |
+| **定制化程度** | 高 - 完全控制 UI | 中等 - 主题/样式定制 |
+| **包体积** | 更小 - 仅 remark 插件 | 更大 - 完整 React 组件库 |
+| **框架支持** | 任意（React、Vue、原生 JS 等） | 仅 React |
+| **高级功能** | 需手动实现 | 内置（流式传输、打字机效果等） |
+| **适用场景** | 自定义 UI 需求、非 React 项目 | 快速原型、React 项目 |
 
 ## 🌐 MarkdownFlow 生态系统
 

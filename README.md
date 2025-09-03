@@ -178,87 +178,235 @@ const remarkData = parser.parseToRemarkFormat('?[%{{theme}} Light | Dark]');
 ```
 
 
-## 🔗 Integration Examples
+## 🔗 Usage Examples
 
-### With Markdown Flow UI
+remark-flow can be used in two main ways:
+
+1. **Standalone** - Parse and transform syntax, then render with your own UI components
+2. **With markdown-flow-ui** - Use the pre-built React components for instant interactive UI
+
+### 🎯 Standalone Usage (Custom Rendering)
+
+When using remark-flow standalone, you parse the syntax and create your own UI components based on the AST nodes.
+
+#### Basic AST Transformation
+
+```typescript
+import { remark } from 'remark';
+import { visit } from 'unist-util-visit';
+import remarkFlow from 'remark-flow';
+import type { Node } from 'unist';
+
+const processor = remark().use(remarkFlow);
+
+const markdown = `
+# Choose Your Preferences
+
+Select language: ?[%{{language}} JavaScript | Python | TypeScript | Go]
+Enter your name: ?[%{{username}}...Your full name]
+Action: ?[Save//save | Cancel//cancel]
+`;
+
+// Parse and examine the AST
+const ast = processor.parse(markdown);
+processor.runSync(ast);
+
+// Find custom-variable nodes
+visit(ast, 'custom-variable', (node: any) => {
+  console.log('Found interaction:', node.data);
+  // Output: { variableName: 'language', buttonTexts: ['JavaScript', 'Python', 'TypeScript', 'Go'], buttonValues: [...] }
+});
+```
+
+#### Custom HTML Renderer
+
+```typescript
+import { visit } from 'unist-util-visit';
+import { remark } from 'remark';
+import remarkHtml from 'remark-html';
+
+function createCustomRenderer() {
+  return (tree: Node) => {
+    visit(tree, 'custom-variable', (node: any) => {
+      const { variableName, buttonTexts, buttonValues, placeholder } = node.data;
+
+      if (buttonTexts && buttonTexts.length > 0) {
+        // Render as button group
+        const buttonsHtml = buttonTexts
+          .map((text, i) => {
+            const value = buttonValues?.[i] || text;
+            return `<button onclick="selectOption('${variableName}', '${value}')" class="interactive-btn">
+              ${text}
+            </button>`;
+          })
+          .join('');
+        
+        node.type = 'html';
+        node.value = `
+          <div class="button-group" data-variable="${variableName}">
+            ${buttonsHtml}
+          </div>
+        `;
+      } else if (placeholder) {
+        // Render as text input
+        node.type = 'html';
+        node.value = `
+          <div class="input-group">
+            <label for="${variableName}">${placeholder}</label>
+            <input 
+              id="${variableName}" 
+              name="${variableName}" 
+              placeholder="${placeholder}"
+              class="interactive-input"
+            />
+          </div>
+        `;
+      }
+    });
+  };
+}
+
+// Use with remark processor
+const processor = remark()
+  .use(remarkFlow)
+  .use(createCustomRenderer)
+  .use(remarkHtml);
+
+const result = processor.processSync(markdown);
+console.log(result.toString()); // HTML with custom interactive elements
+```
+
+#### React Custom Components
+
+```typescript
+import React from 'react';
+import { remark } from 'remark';
+import remarkReact from 'remark-react';
+import remarkFlow from 'remark-flow';
+
+// Custom React components for interactive elements
+const InteractiveButton = ({ variableName, buttonTexts, buttonValues, onSelect }) => (
+  <div className="flex gap-2">
+    {buttonTexts.map((text, i) => (
+      <button
+        key={i}
+        onClick={() => onSelect(variableName, buttonValues[i])}
+        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+      >
+        {text}
+      </button>
+    ))}
+  </div>
+);
+
+const InteractiveInput = ({ variableName, placeholder, onInput }) => (
+  <div className="my-2">
+    <input
+      type="text"
+      placeholder={placeholder}
+      onChange={(e) => onInput(variableName, e.target.value)}
+      className="border border-gray-300 rounded px-3 py-2 w-full"
+    />
+  </div>
+);
+
+// Usage in React component
+function CustomMarkdownRenderer() {
+  const handleInteraction = (variableName, value) => {
+    console.log(`${variableName}: ${value}`);
+    // Handle user interaction
+  };
+
+  const processor = remark()
+    .use(remarkFlow)
+    .use(remarkReact, {
+      remarkReactComponents: {
+        'custom-variable': ({ node }) => {
+          const { variableName, buttonTexts, buttonValues, placeholder } = node.data;
+          
+          if (buttonTexts?.length > 0) {
+            return (
+              <InteractiveButton
+                variableName={variableName}
+                buttonTexts={buttonTexts}
+                buttonValues={buttonValues}
+                onSelect={handleInteraction}
+              />
+            );
+          }
+          
+          if (placeholder) {
+            return (
+              <InteractiveInput
+                variableName={variableName}
+                placeholder={placeholder}
+                onInput={handleInteraction}
+              />
+            );
+          }
+          
+          return null;
+        },
+      },
+    });
+
+  const content = `
+  # Interactive Form
+  
+  Choose language: ?[%{{lang}} English | 中文 | Español]
+  Your name: ?[%{{name}}...Enter your name]
+  Action: ?[Submit//submit | Reset//reset]
+  `;
+
+  return <div>{processor.processSync(content).result}</div>;
+}
+```
+
+### 🎨 With markdown-flow-ui (Pre-built Components)
+
+For a complete React component library with ready-to-use interactive components, use [markdown-flow-ui](https://github.com/ai-shifu/markdown-flow-ui).
+
+#### Basic Integration
 
 ```typescript
 import { MarkdownFlow } from 'markdown-flow-ui';
-import { remark } from 'remark';
-import remarkFlow from 'remark-flow';
 
 function InteractiveChat() {
-  const processor = remark().use(remarkFlow);
-
   const content = `
-  Welcome! Please select your preference:
+  # Welcome! 👋
 
-  ?[%{{language}} JavaScript | Python | TypeScript | Go]
-
-  Click to continue: ?[Let's Go!//start]
+  Select your preference: ?[%{{language}} JavaScript | Python | TypeScript]
+  Enter your name: ?[%{{username}}...Your full name]
+  Ready to start: ?[Let's Go!//start]
   `;
 
   return (
     <MarkdownFlow
       initialContentList={[{ content }]}
-      onSend={data => {
-        console.log('User selected:', data.buttonText);
-        // Handle user interaction
+      onSend={(data) => {
+        console.log('User interaction:', data);
+        // Handle user interactions
       }}
+      typingSpeed={30}
     />
   );
 }
 ```
 
-### With Custom Renderer
+**For advanced examples with streaming, multi-step forms, and more features, see:**
+- 📖 [markdown-flow-ui Documentation](https://github.com/ai-shifu/markdown-flow-ui#readme)
+- 🇨🇳 [中文文档](https://github.com/ai-shifu/markdown-flow-ui/blob/main/README_ZH-CN.md)
 
-```typescript
-import { visit } from 'unist-util-visit';
-import type { Node } from 'unist';
+### 📊 Comparison: Standalone vs markdown-flow-ui
 
-function customRenderer() {
-  return (tree: Node) => {
-    visit(tree, 'custom-variable', (node: any) => {
-      const { variableName, buttonTexts, buttonValues, placeholder } =
-        node.data;
-
-      // Transform into your custom components
-      if (buttonTexts && buttonTexts.length > 0) {
-        // Render as button group
-        node.type = 'html';
-        node.value = renderButtonGroup(buttonTexts, buttonValues);
-      } else if (placeholder) {
-        // Render as text input
-        node.type = 'html';
-        node.value = renderTextInput(variableName, placeholder);
-      }
-    });
-  };
-}
-```
-
-### With Next.js and MDX
-
-```typescript
-// pages/interactive.mdx
-import { remarkFlow } from 'remark-flow';
-
-export default function Interactive() {
-  return (
-    <MDXProvider components={{ 'custom-variable': InteractiveComponent }}>
-      # Interactive Content Choose your framework: ?[%{{ framework }} React |
-      Vue | Svelte]
-    </MDXProvider>
-  );
-}
-
-// Configure in next.config.js
-const withMDX = require('@next/mdx')({
-  options: {
-    remarkPlugins: [remarkFlow],
-  },
-});
-```
+| Aspect | Standalone Usage | With markdown-flow-ui |
+|--------|------------------|----------------------|
+| **Setup Complexity** | Medium - Need custom rendering | Low - Pre-built components |
+| **Customization** | High - Full control over UI | Medium - Theme/style customization |
+| **Bundle Size** | Smaller - Only remark plugin | Larger - Full React component library |
+| **Framework Support** | Any (React, Vue, vanilla JS, etc.) | React only |
+| **Advanced Features** | Manual implementation needed | Built-in (streaming, typewriter, etc.) |
+| **Use Case** | Custom UI requirements, non-React | Rapid prototyping, React projects |
 
 ## 🌐 MarkdownFlow Ecosystem
 
