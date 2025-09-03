@@ -146,7 +146,7 @@ Remark Flow follows a modular, layered architecture:
 
 ```
 src/
-├── index.ts                    # Main entry point and exports
+├── index.ts                   # Main entry point and exports
 ├── remark-flow.ts             # Primary plugin implementation
 ├── remark-interaction.ts      # Default export plugin (recommended)
 ├── remark-custom-variable.ts  # Variable-focused plugin

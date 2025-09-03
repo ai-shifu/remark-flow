@@ -146,7 +146,7 @@ Remark Flow 采用模块化、分层架构：
 
 ```
 src/
-├── index.ts                    # 主入口点和导出
+├── index.ts                   # 主入口点和导出
 ├── remark-flow.ts             # 主插件实现
 ├── remark-interaction.ts      # 默认导出插件（推荐）
 ├── remark-custom-variable.ts  # 专注变量的插件
