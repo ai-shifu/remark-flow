@@ -20,9 +20,9 @@ English | [简体中文](README_ZH-CN.md)
 
 ```bash
 npm install remark-flow
-# or 
+# or
 yarn add remark-flow
-# or 
+# or
 pnpm add remark-flow
 ```
 
@@ -177,7 +177,7 @@ const result = parser.parse('?[%{{theme}} Light | Dark]');
 const remarkData = parser.parseToRemarkFormat('?[%{{theme}} Light | Dark]');
 ```
 
- 
+
 ## 🔗 Integration Examples
 
 ### With Markdown Flow UI
