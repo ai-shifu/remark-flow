@@ -165,7 +165,7 @@ The parser uses a sophisticated three-layer approach:
 import remarkFlow from 'remark-flow'
 
 // Named exports
-import { 
+import {
   remarkFlow,           // Main plugin, functionally the same as the default export
   remarkInteraction,    // The core plugin, which is also the default export
   remarkCustomVariable, // Variable-focused plugin
