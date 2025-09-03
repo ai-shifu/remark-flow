@@ -12,7 +12,7 @@
 
 **Remark Flow** 是一个强大的 remark 插件，能够将 Markdown 中的自定义 `?[...]` 语法转换为交互式元素。它专门用于将按钮和变量输入语法转换为结构化数据，从而在应用程序中创建交互式组件。
 
-## 🤝 AI师傅生态系统的一部分
+## 🤝 AI师傅生态系统的组成部分
 
 Remark Flow 作为 [AI-Shifu](https://github.com/ai-shifu/ai-shifu) 对话式AI平台的 markdown 解析基础，并为 [Markdown Flow UI](https://github.com/ai-shifu/markdown-flow-ui) 中使用的交互语法提供支持。虽然这个库可以独立使用，但它专门设计用于在AI驱动的应用程序中实现个性化、交互式体验。
 
