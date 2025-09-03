@@ -1,6 +1,14 @@
 ci:
   skip: [eslint] # Skip ESLint hooks in pre-commit.ci since it does not work
 repos:
+  # Markdown linting
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.45.0
+    hooks:
+      - id: markdownlint
+        args: ['--fix']
+
+  # General file fixes
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -11,6 +19,7 @@ repos:
       - id: end-of-file-fixer
         exclude: ^package-lock\.json$
       - id: trailing-whitespace
+        args: ['--markdown-linebreak-ext=md']
         exclude: ^package-lock\.json$
       - id: pretty-format-json
         args: ['--autofix', '--indent=2', '--no-ensure-ascii']
@@ -28,7 +37,7 @@ repos:
         name: Prettier
         entry: prettier
         language: node
-        files: ^src/.*\.(js|jsx|ts|tsx|mjs|cjs|css|scss|md|json)$
+        files: ^src/.*\.(js|jsx|ts|tsx|mjs|cjs|css|scss|json)$
         args: ['--write']
         additional_dependencies: ['prettier@^3.6.2']
         pass_filenames: true

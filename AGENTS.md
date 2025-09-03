@@ -35,7 +35,7 @@ npm run test:watch    # Run tests in watch mode (recommended)
 
 ### Essential File Structure
 
-```
+```bash
 src/
 ├── index.ts                    # Main exports and default plugin
 ├── remark-flow.ts             # Primary plugin implementation
@@ -90,7 +90,7 @@ tests/                         # Comprehensive test suite
 
 The project follows a modular TypeScript architecture:
 
-```
+```bash
 src/
 ├── index.ts                    # Main entry point and default export
 ├── remark-flow.ts             # Primary plugin implementation
@@ -145,7 +145,7 @@ npm run build
 
 #### Test File Structure and Naming
 
-```
+```bash
 tests/
 ├── index.test.ts                      # Integration tests for main exports
 ├── remark-flow.test.ts               # Primary plugin functionality
@@ -316,6 +316,7 @@ This project implements a **layered parsing architecture** with strict syntax ru
    ```
 
 5. **Combined: Buttons + Text Input**
+
    ```markdown
    ?[%{{size}} Small//S | Medium//M | Large//L | ...custom size]
    ```
@@ -454,6 +455,7 @@ function badParseFunction(content: string) {
    ```
 
 4. **Unicode Parsing Errors**
+
    ```typescript
    // Input: Contains invalid Unicode sequences
    // Output: Best-effort parsing with fallback
@@ -500,7 +502,7 @@ visit(tree, 'text', processVariables); // Second pass - wasteful!
 
 ### Test File Structure
 
-```
+```bash
 src/                          # Source code directory
 ├── index.ts                  # Main exports and default plugin
 ├── remark-flow.ts            # Primary plugin implementation

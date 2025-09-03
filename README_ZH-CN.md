@@ -1,6 +1,5 @@
 # Remark Flow
 
-
 **用于解析[MarkdownFlow](https://markdownflow.ai) 文档的remark插件库**
 
 MarkdownFlow（也称为 MDFlow 或 markdown-flow）通过 AI 扩展了标准 Markdown，用于创建个性化的交互式页面。我们的口号是：**“一次创作，千人千面”**。
@@ -129,6 +128,7 @@ const result = processor.processSync(`
 ?[%{{用户名}}...请输入您的姓名]
 ?[👍 好 | 👎 差 | 🤔 不确定]
 ```
+
 ## 📖 API 参考
 
 ### 插件导出
@@ -176,6 +176,7 @@ const result = parser.parse('?[%{{theme}} 浅色 | 深色]');
 // 解析并转换为 remark 兼容格式
 const remarkData = parser.parseToRemarkFormat('?[%{{theme}} 浅色 | 深色]');
 ```
+
 ## 🔗 使用示例
 
 remark-flow 可以通过两种主要方式使用：
@@ -226,7 +227,8 @@ import remarkHtml from 'remark-html';
 function createCustomRenderer() {
   return (tree: Node) => {
     visit(tree, 'custom-variable', (node: any) => {
-      const { variableName, buttonTexts, buttonValues, placeholder } = node.data;
+      const { variableName, buttonTexts, buttonValues, placeholder } =
+        node.data;
 
       if (buttonTexts && buttonTexts.length > 0) {
         // 渲染为按钮组
@@ -392,18 +394,19 @@ function InteractiveChat() {
 ```
 
 **更多高级示例（包括流式传输、多步骤表单等功能），请查看：**
+
 - 🇨🇳 [markdown-flow-ui 文档](https://github.com/ai-shifu/markdown-flow-ui/blob/main/README_ZH-CN.md)
 
 ### 📊 对比：独立使用 vs markdown-flow-ui
 
-| 方面 | 独立使用 | 配合 markdown-flow-ui |
-|------|----------|----------------------|
-| **设置复杂度** | 中等 - 需要自定义渲染 | 低 - 预构建组件 |
-| **定制化程度** | 高 - 完全控制 UI | 中等 - 主题/样式定制 |
-| **包体积** | 更小 - 仅 remark 插件 | 更大 - 完整 React 组件库 |
-| **框架支持** | 任意（React、Vue、原生 JS 等） | 仅 React |
-| **高级功能** | 需手动实现 | 内置（流式传输、打字机效果等） |
-| **适用场景** | 自定义 UI 需求、非 React 项目 | 快速原型、React 项目 |
+| 方面           | 独立使用                       | 配合 markdown-flow-ui          |
+| -------------- | ------------------------------ | ------------------------------ |
+| **设置复杂度** | 中等 - 需要自定义渲染          | 低 - 预构建组件                |
+| **定制化程度** | 高 - 完全控制 UI               | 中等 - 主题/样式定制           |
+| **包体积**     | 更小 - 仅 remark 插件          | 更大 - 完整 React 组件库       |
+| **框架支持**   | 任意（React、Vue、原生 JS 等） | 仅 React                       |
+| **高级功能**   | 需手动实现                     | 内置（流式传输、打字机效果等） |
+| **适用场景**   | 自定义 UI 需求、非 React 项目  | 快速原型、React 项目           |
 
 ## 🌐 MarkdownFlow 生态系统
 
@@ -413,7 +416,6 @@ remark-flow 是 MarkdownFlow 生态系统的一部分，用于创建个性化的
 - **[markdown-flow-agent-py](https://github.com/ai-shifu/markdown-flow-agent-py)** - 用于将 MarkdownFlow 文档转换为个性化内容的 Python 代理
 - **[markdown-it-flow](https://github.com/ai-shifu/markdown-it-flow)** - 用于解析和渲染 MarkdownFlow 语法的 markdown-it 插件
 - **[remark-flow](https://github.com/ai-shifu/remark-flow)** - 用于在 React 应用中解析和处理 MarkdownFlow 语法的 Remark 插件
-
 
 ## 💖 赞助商
 

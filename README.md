@@ -177,7 +177,6 @@ const result = parser.parse('?[%{{theme}} Light | Dark]');
 const remarkData = parser.parseToRemarkFormat('?[%{{theme}} Light | Dark]');
 ```
 
-
 ## 🔗 Usage Examples
 
 remark-flow can be used in two main ways:
@@ -228,7 +227,8 @@ import remarkHtml from 'remark-html';
 function createCustomRenderer() {
   return (tree: Node) => {
     visit(tree, 'custom-variable', (node: any) => {
-      const { variableName, buttonTexts, buttonValues, placeholder } = node.data;
+      const { variableName, buttonTexts, buttonValues, placeholder } =
+        node.data;
 
       if (buttonTexts && buttonTexts.length > 0) {
         // Render as button group
@@ -394,19 +394,19 @@ function InteractiveChat() {
 ```
 
 **For advanced examples with streaming, multi-step forms, and more features, see:**
-- 📖 [markdown-flow-ui Documentation](https://github.com/ai-shifu/markdown-flow-ui#readme)
 
+- 📖 [markdown-flow-ui Documentation](https://github.com/ai-shifu/markdown-flow-ui#readme)
 
 ### 📊 Comparison: Standalone vs markdown-flow-ui
 
-| Aspect | Standalone Usage | With markdown-flow-ui |
-|--------|------------------|----------------------|
-| **Setup Complexity** | Medium - Need custom rendering | Low - Pre-built components |
-| **Customization** | High - Full control over UI | Medium - Theme/style customization |
-| **Bundle Size** | Smaller - Only remark plugin | Larger - Full React component library |
-| **Framework Support** | Any (React, Vue, vanilla JS, etc.) | React only |
-| **Advanced Features** | Manual implementation needed | Built-in (streaming, typewriter, etc.) |
-| **Use Case** | Custom UI requirements, non-React | Rapid prototyping, React projects |
+| Aspect                | Standalone Usage                   | With markdown-flow-ui                  |
+| --------------------- | ---------------------------------- | -------------------------------------- |
+| **Setup Complexity**  | Medium - Need custom rendering     | Low - Pre-built components             |
+| **Customization**     | High - Full control over UI        | Medium - Theme/style customization     |
+| **Bundle Size**       | Smaller - Only remark plugin       | Larger - Full React component library  |
+| **Framework Support** | Any (React, Vue, vanilla JS, etc.) | React only                             |
+| **Advanced Features** | Manual implementation needed       | Built-in (streaming, typewriter, etc.) |
+| **Use Case**          | Custom UI requirements, non-React  | Rapid prototyping, React projects      |
 
 ## 🌐 MarkdownFlow Ecosystem
 
