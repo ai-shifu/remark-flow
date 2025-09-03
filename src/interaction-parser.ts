@@ -80,6 +80,13 @@ export interface RemarkCompatibleResult {
   placeholder?: string;
 }
 
+// Legacy return data format for backward compatibility
+export interface LegacyReturnData {
+  variable?: string;
+  buttons?: Button[];
+  question?: string;
+}
+
 /**
  * Layered interaction parser class
  */
@@ -109,9 +116,9 @@ export class InteractionParser {
         this._layer2DetectVariable(innerContent);
 
       // Layer 3: Specific content parsing
-      if (hasVariable) {
+      if (hasVariable && variableName) {
         return this._layer3ParseVariableInteraction(
-          variableName!,
+          variableName,
           remainingContent
         );
       } else {
@@ -393,7 +400,7 @@ export class InteractionParser {
  */
 export function parseInteractionFormat(
   content: string
-): [InteractionType, any] {
+): [InteractionType, LegacyReturnData] {
   // Use new layered parser
   const parser = new InteractionParser();
   const result = parser.parse(content);
@@ -405,10 +412,10 @@ export function parseInteractionFormat(
   }
 
   // Extract parse result and convert to original return format
-  const interactionType = result.type!;
+  const interactionType = result.type;
 
   // Build return data dictionary for backward compatibility
-  const returnData: any = {};
+  const returnData: LegacyReturnData = {};
 
   if (result.type !== InteractionType.NON_ASSIGNMENT_BUTTON) {
     const variableResult = result as VariableInteractionResult;
@@ -428,7 +435,9 @@ export function parseInteractionFormat(
     }
   }
 
-  return [interactionType, returnData];
+  // Ensure we have a valid interaction type, fallback to TEXT_ONLY if null
+  const finalType = interactionType || InteractionType.TEXT_ONLY;
+  return [finalType, returnData];
 }
 
 /**
