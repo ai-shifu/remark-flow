@@ -1,8 +1,9 @@
 # Remark Flow
 
-**将 Markdown 转换为交互式对话体验**
 
-**Remark Flow** 是一个强大的 remark 插件，能够将 Markdown 中的自定义 `?[...]` 语法转换为交互式元素。它专门用于将按钮和变量输入语法转换为结构化数据，从而在应用程序中创建交互式组件。
+**用于解析[MarkdownFlow](https://markdownflow.ai) 文档的remark插件库**
+
+MarkdownFlow（也称为 MDFlow 或 markdown-flow）通过 AI 扩展了标准 Markdown，用于创建个性化的交互式页面。我们的口号是：**“一次创作，千人千面”**。
 
 <div align="center">
 

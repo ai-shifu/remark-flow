@@ -1,8 +1,8 @@
 # Remark Flow
 
-**Transform markdown into interactive conversational experiences**
+**A remark plugin library for parsing [MarkdownFlow](https://markdownflow.ai) documents**
 
-**Remark Flow** is a powerful remark plugin that transforms custom `?[...]` syntax in Markdown into interactive elements. It's designed to convert button and variable input syntax into structured data that can be used to create interactive components in applications.
+[MarkdownFlow](https://markdownflow.ai) (also known as MDFlow or markdown-flow) extends standard Markdown with AI to create personalized, interactive pages. Its tagline is **"Write Once, Deliver Personally"**.
 
 <div align="center">
 
