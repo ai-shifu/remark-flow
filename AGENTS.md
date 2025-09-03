@@ -316,6 +316,7 @@ This project implements a **layered parsing architecture** with strict syntax ru
    ```
 
 5. **Combined: Buttons + Text Input**
+
    ```markdown
    ?[%{{size}} Small//S | Medium//M | Large//L | ...custom size]
    ```
@@ -454,6 +455,7 @@ function badParseFunction(content: string) {
    ```
 
 4. **Unicode Parsing Errors**
+
    ```typescript
    // Input: Contains invalid Unicode sequences
    // Output: Best-effort parsing with fallback

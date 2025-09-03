@@ -25,6 +25,7 @@
     "husky": "^9.1.7",
     "jest": "^29.0.0",
     "lint-staged": "^16.1.6",
+    "markdownlint-cli2": "^0.18.1",
     "prettier": "^3.6.2",
     "remark": "^15.0.0",
     "remark-parse": "^11.0.0",
@@ -46,11 +47,15 @@
   ],
   "license": "MIT",
   "lint-staged": {
-    "src/**/*.{css,scss,md,json}": [
+    "src/**/*.{css,scss,json}": [
       "prettier --write"
     ],
     "src/**/*.{js,jsx,ts,tsx,mjs,cjs}": [
       "eslint --fix --max-warnings 10",
+      "prettier --write"
+    ],
+    "**/*.md": [
+      "markdownlint-cli2 --fix",
       "prettier --write"
     ]
   },
@@ -68,6 +73,8 @@
     "lint": "eslint --max-warnings 10",
     "lint-staged": "lint-staged",
     "lint:fix": "eslint --fix --max-warnings 10",
+    "lint:md": "markdownlint-cli2",
+    "lint:md:fix": "markdownlint-cli2 --fix",
     "prepare": "husky",
     "prepublishOnly": "npm run build",
     "test": "jest",
