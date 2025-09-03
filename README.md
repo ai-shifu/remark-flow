@@ -1,33 +1,18 @@
-<div align="center">
-  <h1>Remark Flow</h1>
-  <p><strong>Transform markdown into interactive conversational experiences</strong></p>
+# Remark Flow
 
-English | [简体中文](README_ZH-CN.md)
+**Transform markdown into interactive conversational experiences**
+
+**Remark Flow** is a powerful remark plugin that transforms custom `?[...]` syntax in Markdown into interactive elements. It's designed to convert button and variable input syntax into structured data that can be used to create interactive components in applications.
+
+<div align="center">
 
 [![npm version](https://badge.fury.io/js/remark-flow.svg)](https://badge.fury.io/js/remark-flow)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 
+English | [简体中文](README_ZH-CN.md)
+
 </div>
-
-**Remark Flow** is a powerful remark plugin that transforms custom `?[...]` syntax in Markdown into interactive elements. It's designed to convert button and variable input syntax into structured data that can be used to create interactive components in applications.
-
-## 🤝 Part of the AI-Shifu Ecosystem
-
-Remark Flow serves as the markdown parsing foundation for the [AI-Shifu](https://github.com/ai-shifu/ai-shifu) conversational AI platform and powers the interactive syntax used in [Markdown Flow UI](https://github.com/ai-shifu/markdown-flow-ui). While this library can be used standalone, it was specifically designed to enable personalized, interactive experiences in AI-driven applications.
-
-**🌟 See it in action:** Visit [AI-Shifu.com](https://ai-shifu.com) to experience the library in a real-world educational platform.
-
-## ✨ Why Choose Remark Flow?
-
-Unlike standard markdown parsers, Remark Flow is specifically built for **interactive conversational content**:
-
-- 🎯 **Button Syntax** - `?[Button Text]` → interactive button data
-- 🔧 **Variable Inputs** - `?[%{{name}} options]` → form field data
-- 🎨 **Custom Values** - `?[Display//value]` → separate display/value pairs
-- 🌍 **Unicode Support** - Works seamlessly with Chinese and other languages
-- 🔄 **Multiple Patterns** - Support for complex interaction patterns
-- 🏗️ **AST Integration** - Clean integration with remark/unified ecosystem
 
 ## 🚀 Quick Start
 
@@ -35,11 +20,15 @@ Unlike standard markdown parsers, Remark Flow is specifically built for **intera
 
 ```bash
 npm install remark-flow
+# or 
+yarn add remark-flow
+# or 
+pnpm add remark-flow
 ```
 
 ### Basic Usage
 
-```javascript
+```typescript
 import { remark } from 'remark';
 import remarkFlow from 'remark-flow';
 
@@ -58,7 +47,7 @@ const result = processor.processSync(markdown);
 
 ### Advanced Usage
 
-```javascript
+```typescript
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkFlow from 'remark-flow';
@@ -123,7 +112,7 @@ Action: ?[Save Changes//save | Cancel//cancel]
 
 **Output:**
 
-```javascript
+```typescript
 {
   variableName: "size",
   buttonTexts: ["Small", "Medium", "Large"],
@@ -139,34 +128,6 @@ Action: ?[Save Changes//save | Cancel//cancel]
 ?[%{{用户名}}...请输入您的姓名]
 ?[👍 Good | 👎 Bad | 🤔 Unsure]
 ```
-
-## 🏗️ Architecture
-
-Remark Flow follows a modular, layered architecture:
-
-```
-src/
-├── index.ts                   # Main entry point and exports
-├── remark-flow.ts             # Primary plugin implementation
-├── remark-interaction.ts      # Default export plugin (recommended)
-├── remark-custom-variable.ts  # Variable-focused plugin
-└── interaction-parser.ts      # Core parsing engine with 3-layer architecture
-```
-
-### Core Components
-
-- **Main Plugin (`remark-interaction.ts`)**: The default export plugin that handles all `?[...]` transformations
-- **Layered Parser (`interaction-parser.ts`)**: Three-layer parsing system for robust syntax analysis
-- **Variable Handler (`remark-custom-variable.ts`)**: Specialized processor for variable syntax patterns
-- **Flow Plugin (`remark-flow.ts`)**: Unified plugin combining all features
-
-### Three-Layer Parsing Architecture
-
-The parser uses a sophisticated three-layer approach:
-
-1. **Layer 1: Format Validation** - Validates `?[...]` pattern and excludes markdown links
-2. **Layer 2: Variable Detection** - Identifies `%{{variable}}` patterns and classifies content
-3. **Layer 3: Content Parsing** - Handles specific syntax patterns and edge cases
 
 ## 📖 API Reference
 
@@ -216,76 +177,12 @@ const result = parser.parse('?[%{{theme}} Light | Dark]');
 const remarkData = parser.parseToRemarkFormat('?[%{{theme}} Light | Dark]');
 ```
 
-## 🎯 Use Cases
-
-**Perfect for:**
-
-- ✅ Interactive documentation and tutorials
-- ✅ Conversational AI interfaces (like ChatGPT)
-- ✅ Educational content with user input
-- ✅ Survey and form generation from markdown
-- ✅ Interactive storytelling applications
-- ✅ Dynamic content personalization
-
-**Not ideal for:**
-
-- ❌ Static blog content without interaction
-- ❌ Simple documentation sites
-- ❌ Non-interactive markdown processing
-
-## 🛠 Development
-
-### Prerequisites
-
-- Node.js 16+
-- npm or yarn
-
-### Setup
-
-```bash
-git clone https://github.com/ai-shifu/remark-flow.git
-cd remark-flow
-npm install
-
-# Run tests
-npm test
-
-# Build TypeScript
-npm run build
-
-# Lint and format
-npm run lint:fix
-npm run format
-```
-
-### Scripts
-
-| Script                  | Description                 |
-| ----------------------- | --------------------------- |
-| `npm test`              | Run test suite with Jest    |
-| `npm run test:coverage` | Generate coverage reports   |
-| `npm run test:watch`    | Run tests in watch mode     |
-| `npm run build`         | Compile TypeScript to dist/ |
-| `npm run lint`          | ESLint code quality checks  |
-| `npm run lint:fix`      | Auto-fix linting issues     |
-| `npm run format`        | Format code with Prettier   |
-
-### Testing
-
-Comprehensive test coverage includes:
-
-- ✅ **Unit tests** for all syntax patterns
-- ✅ **Integration tests** with remark processor
-- ✅ **Unicode support** testing with Chinese text
-- ✅ **Edge cases** and error handling
-- ✅ **Performance tests** for large content
-- ✅ **Regression tests** for existing functionality
-
+ 
 ## 🔗 Integration Examples
 
 ### With Markdown Flow UI
 
-```jsx
+```typescript
 import { MarkdownFlow } from 'markdown-flow-ui';
 import { remark } from 'remark';
 import remarkFlow from 'remark-flow';
@@ -342,7 +239,7 @@ function customRenderer() {
 
 ### With Next.js and MDX
 
-```jsx
+```typescript
 // pages/interactive.mdx
 import { remarkFlow } from 'remark-flow';
 
@@ -363,116 +260,39 @@ const withMDX = require('@next/mdx')({
 });
 ```
 
-## 🌟 Integration with AI-Shifu Ecosystem
+## 🌐 MarkdownFlow Ecosystem
 
-Remark Flow is actively used across the AI-Shifu ecosystem:
+remark-flow is part of the MarkdownFlow ecosystem for creating personalized, AI-driven interactive documents:
 
-### AI-Shifu Platform
+- **[markdown-flow](https://github.com/ai-shifu/markdown-flow)** - The main repository containing homepage, documentation, and interactive playground
+- **[markdown-flow-agent-py](https://github.com/ai-shifu/markdown-flow-agent-py)** - Python agent for transforming MarkdownFlow documents into personalized content
+- **[remark-flow](https://github.com/ai-shifu/remark-flow)** - Remark plugin to parse and process MarkdownFlow syntax in React applications
+- **[markdown-flow-ui](https://github.com/ai-shifu/markdown-flow-ui)** - React component library for rendering interactive MarkdownFlow documents
 
-```bash
-# Experience the library in action
-git clone https://github.com/ai-shifu/ai-shifu.git
-cd ai-shifu/docker
-cp .env.example.minimal .env
-# Configure your .env file
-docker compose up -d
-# Visit http://localhost:8080
-```
+## 💖 Sponsors
 
-### Markdown Flow UI
-
-```bash
-# See the UI components that consume this parser
-git clone https://github.com/ai-shifu/markdown-flow-ui.git
-cd markdown-flow-ui
-pnpm install
-pnpm storybook
-# Visit http://localhost:6006
-```
-
-## 🔧 Configuration & Customization
-
-### Error Handling
-
-Remark Flow is designed for **graceful degradation**:
-
-```javascript
-// Invalid syntax is preserved, never crashes processing
-const result = processor.processSync(`
-  Regular markdown content
-  ?[incomplete syntax
-  More content continues normally
-`);
-```
-
-### Performance Optimization
-
-- ✅ **Pre-compiled regex patterns** for optimal performance
-- ✅ **Single AST traversal** minimizes processing overhead
-- ✅ **Memory efficient** parsing with minimal allocations
-- ✅ **Lazy evaluation** for better performance on large documents
-
-### Custom Separators
-
-Supports multiple separator styles for international users:
-
-```markdown
-?[Option1 | Option2 | Option3] # Standard pipe
-?[Option1 ｜ Option2 ｜ Option3] # Full-width pipe (Chinese input)
-?[Buttons | More | ...text input] # Ellipsis separator
-```
-
-## 🔍 Troubleshooting
-
-### Common Issues
-
-| Issue                           | Solution                                           |
-| ------------------------------- | -------------------------------------------------- |
-| Plugin not transforming content | Ensure `?[...]` syntax is exact, not `?[...](url)` |
-| Unicode characters not working  | Check regex patterns support Unicode ranges        |
-| Performance issues              | Use pre-compiled patterns, avoid nested processing |
-| Custom values not parsing       | Ensure `//` separator format: `Display//value`     |
-
-### Debug Mode
-
-```javascript
-import { createInteractionParser } from 'remark-flow';
-
-const parser = createInteractionParser();
-const result = parser.parse('?[test content]');
-
-if (result.error) {
-  console.error('Parse error:', result.error);
-} else {
-  console.log('Parse result:', result);
-}
-```
+<div align="center">
+  <a href="https://ai-shifu.com">
+    <img src="https://raw.githubusercontent.com/ai-shifu/ai-shifu/main/assets/logo_en.png" alt="AI-Shifu" width="150" />
+  </a>
+  <p><strong><a href="https://ai-shifu.com">AI-Shifu.com</a></strong></p>
+  <p>AI-powered personalized learning platform</p>
+</div>
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
-- [Remark](https://remark.js.org/) for the powerful markdown processing ecosystem
-- [Unified](https://unifiedjs.com/) for the excellent plugin architecture
+- [Remark](https://remark.js.org/) for markdown processing
+- [Unified](https://unifiedjs.com/) for the plugin architecture
 - [Unist](https://github.com/syntax-tree/unist) for AST utilities
 - [TypeScript](https://www.typescriptlang.org/) for type safety
-- [Jest](https://jestjs.io/) for comprehensive testing
+- [Jest](https://jestjs.io/) for testing framework
 
 ## 📞 Support
 
 - 📖 [Documentation](https://github.com/ai-shifu/remark-flow#readme)
 - 🐛 [Issue Tracker](https://github.com/ai-shifu/remark-flow/issues)
 - 💬 [Discussions](https://github.com/ai-shifu/remark-flow/discussions)
-- 🌟 [AI-Shifu Platform](https://ai-shifu.com)
-
----
-
-<div align="center">
-
-Made with ❤️ for the interactive content community
-
-**[Star us on GitHub](https://github.com/ai-shifu/remark-flow) • [Try AI-Shifu](https://ai-shifu.com) • [View Examples](https://github.com/ai-shifu/markdown-flow-ui)**
-
-</div>
