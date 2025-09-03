@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>🌊 Remark Flow</h1>
+  <h1>Remark Flow</h1>
   <p><strong>将 Markdown 转换为交互式对话体验</strong></p>
 
   [English](README.md) | 简体中文
@@ -7,7 +7,6 @@
   [![npm version](https://badge.fury.io/js/remark-flow.svg)](https://badge.fury.io/js/remark-flow)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
   [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
-  [![Tests](https://github.com/ai-shifu/remark-flow/workflows/CI/badge.svg)](https://github.com/ai-shifu/remark-flow/actions)
 
 </div>
 
@@ -409,14 +408,6 @@ const result = processor.processSync(`
 ?[按钮 | 更多 | ...文本输入] # 省略号分隔符
 ```
 
-## 📊 性能基准
-
-| 操作 | 时间 | 内存 | 说明 |
-|------|------|------|------|
-| 单个 `?[...]` 解析 | < 1ms | < 1KB | 典型语法 |
-| 大文件 (1MB) | < 100ms | < 10MB | 完整处理 |
-| 1000 个模式 | < 50ms | < 5MB | 批量处理 |
-
 ## 🔍 故障排除
 
 ### 常见问题
@@ -446,20 +437,6 @@ if (result.error) {
 ## 📄 许可证
 
 该项目采用 MIT 许可证 - 有关详情请参阅 [LICENSE](LICENSE) 文件。
-
-## 🤝 贡献
-
-我们欢迎贡献！查看我们的 [AGENTS.md](AGENTS.md) 了解详细的开发指南。
-
-### 快速贡献步骤
-
-1. Fork 仓库
-2. 创建功能分支：`git checkout -b feat/amazing-feature`
-3. 运行测试：`npm test`
-4. 确保代码质量：`npm run lint:fix && npm run format`
-5. 提交更改：`git commit -m 'feat: add amazing feature'`
-6. 推送到分支：`git push origin feat/amazing-feature`
-7. 打开 Pull Request
 
 ## 🙏 致谢
 

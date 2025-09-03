@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>🌊 Remark Flow</h1>
+  <h1>Remark Flow</h1>
   <p><strong>Transform markdown into interactive conversational experiences</strong></p>
 
   English | [简体中文](README_ZH-CN.md)
@@ -7,7 +7,6 @@
   [![npm version](https://badge.fury.io/js/remark-flow.svg)](https://badge.fury.io/js/remark-flow)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
   [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
-  [![Tests](https://github.com/ai-shifu/remark-flow/workflows/CI/badge.svg)](https://github.com/ai-shifu/remark-flow/actions)
 
 </div>
 
@@ -409,13 +408,6 @@ Supports multiple separator styles for international users:
 ?[Buttons | More | ...text input] # Ellipsis separator
 ```
 
-## 📊 Performance Benchmarks
-
-| Operation | Time | Memory | Notes |
-|-----------|------|--------|-------|
-| Single `?[...]` parse | < 1ms | < 1KB | Typical syntax |
-| Large file (1MB) | < 100ms | < 10MB | Full processing |
-| 1000 patterns | < 50ms | < 5MB | Batch processing |
 
 ## 🔍 Troubleshooting
 
@@ -447,19 +439,6 @@ if (result.error) {
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🤝 Contributing
-
-We welcome contributions! See our [AGENTS.md](AGENTS.md) for detailed development guidelines.
-
-### Quick Contributing Steps
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feat/amazing-feature`
-3. Run tests: `npm test`
-4. Ensure code quality: `npm run lint:fix && npm run format`
-5. Commit changes: `git commit -m 'feat: add amazing feature'`
-6. Push to branch: `git push origin feat/amazing-feature`
-7. Open a Pull Request
 
 ## 🙏 Acknowledgments
 
