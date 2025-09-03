@@ -457,7 +457,7 @@ if (result.error) {
 
 <div align="center">
 
-为交互式内容社区用❤️制作
+用❤️为交互式内容社区制作
 
 **[在 GitHub 上给我们 Star](https://github.com/ai-shifu/remark-flow) • [试用 AI师傅](https://ai-shifu.com) • [查看示例](https://github.com/ai-shifu/markdown-flow-ui)**
 
