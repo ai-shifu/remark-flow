@@ -75,14 +75,14 @@ jobs:
         run: |
           # Get the latest published version from npm
           LATEST_NPM_VERSION=$(npm view remark-flow version 2>/dev/null || echo "")
-          
+
           if [ -z "$LATEST_NPM_VERSION" ]; then
             echo "has_changes=true" >> $GITHUB_OUTPUT
             echo "No published version found on npm, creating first release"
             echo "npm_version=" >> $GITHUB_OUTPUT
           else
             echo "Latest npm version: $LATEST_NPM_VERSION"
-            
+
             # Find the git tag corresponding to the npm version
             NPM_TAG="v$LATEST_NPM_VERSION"
             if git rev-parse "$NPM_TAG" >/dev/null 2>&1; then
@@ -92,7 +92,7 @@ jobs:
               echo "No git tag found for npm version, checking all commits"
               COMMITS=$(git log --oneline | grep -E "^[a-f0-9]+ (feat|fix|BREAKING CHANGE)" || true)
             fi
-            
+
             if [ -n "$COMMITS" ]; then
               echo "has_changes=true" >> $GITHUB_OUTPUT
               echo "Found commits requiring version bump since npm version $LATEST_NPM_VERSION:"
@@ -113,7 +113,7 @@ jobs:
         if: steps.check_commits.outputs.has_changes == 'true'
         run: |
           NPM_VERSION="${{ steps.check_commits.outputs.npm_version }}"
-          
+
           if [ -z "$NPM_VERSION" ]; then
             echo "Creating first release from standard version 1.0.0..."
             # Update package.json to standard version first
