@@ -76,12 +76,16 @@ jobs:
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           if [ -z "$LAST_TAG" ]; then
             echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "No previous tags found, creating first release"
           else
-            COMMITS=$(git log ${LAST_TAG}..HEAD --oneline --grep="^feat" --grep="^fix" --grep="^BREAKING CHANGE" --extended-regexp)
+            COMMITS=$(git log ${LAST_TAG}..HEAD --oneline | grep -E "^[a-f0-9]+ (feat|fix|BREAKING CHANGE)" || true)
             if [ -n "$COMMITS" ]; then
               echo "has_changes=true" >> $GITHUB_OUTPUT
+              echo "Found commits requiring version bump:"
+              echo "$COMMITS"
             else
               echo "has_changes=false" >> $GITHUB_OUTPUT
+              echo "No conventional commits found since last release"
             fi
           fi
 
@@ -93,11 +97,22 @@ jobs:
         id: version
         if: steps.check_commits.outputs.has_changes == 'true'
         run: |
-          standard-version
+          # Create initial tag if none exists
+          if ! git describe --tags --abbrev=0 2>/dev/null; then
+            echo "Creating initial release..."
+            standard-version --first-release
+          else
+            echo "Creating new version..."
+            standard-version
+          fi
+
           NEW_VERSION=$(node -p "require('./package.json').version")
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "has_changes=true" >> $GITHUB_OUTPUT
-          git push --follow-tags
+
+          # Push changes and tags
+          git push origin main
+          git push --tags
 
   build:
     runs-on: ubuntu-latest
@@ -208,12 +223,10 @@ jobs:
           fi
 
       - name: Create GitHub Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.version.outputs.new_version }}
-          release_name: Release v${{ needs.version.outputs.new_version }}
+          name: Release v${{ needs.version.outputs.new_version }}
           body: |
             ## 📦 Package Information
             - **Package**: [remark-flow](https://www.npmjs.com/package/remark-flow)
@@ -229,3 +242,4 @@ jobs:
             - [Issues](https://github.com/${{ github.repository }}/issues)
           draft: false
           prerelease: ${{ contains(needs.version.outputs.new_version, 'alpha') || contains(needs.version.outputs.new_version, 'beta') || contains(needs.version.outputs.new_version, 'rc') }}
+          token: ${{ secrets.GITHUB_TOKEN }}
