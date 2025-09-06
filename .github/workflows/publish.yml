@@ -54,14 +54,14 @@ jobs:
         run: |
           # Get the latest published version from npm
           LATEST_NPM_VERSION=$(npm view remark-flow version 2>/dev/null || echo "")
-          
+
           if [ -z "$LATEST_NPM_VERSION" ]; then
             echo "No published version found on npm, creating first release"
             COMMIT_RANGE="HEAD"
             NEW_VERSION="1.0.0"
           else
             echo "Latest npm version: $LATEST_NPM_VERSION"
-            
+
             # Find the git tag corresponding to the npm version
             NPM_TAG="v$LATEST_NPM_VERSION"
             if git rev-parse "$NPM_TAG" >/dev/null 2>&1; then
@@ -71,16 +71,16 @@ jobs:
               echo "No git tag found for npm version, using all commits"
               COMMIT_RANGE="HEAD"
             fi
-            
+
             # Check for commits requiring version bump
             COMMITS=$(git log $COMMIT_RANGE --oneline --grep="^feat" --grep="^fix" --grep="BREAKING CHANGE" --perl-regexp | head -20)
-            
+
             if [ -z "$COMMITS" ]; then
               echo "No conventional commits found since last release"
               echo "has_changes=false" >> $GITHUB_OUTPUT
               exit 0
             fi
-            
+
             # Determine version bump type
             if git log $COMMIT_RANGE --pretty=format:"%s" | grep -q "BREAKING CHANGE"; then
               BUMP_TYPE="major"
@@ -89,13 +89,13 @@ jobs:
             else
               BUMP_TYPE="patch"
             fi
-            
+
             # Calculate new version
             IFS='.' read -r -a VERSION_PARTS <<< "$LATEST_NPM_VERSION"
             MAJOR=${VERSION_PARTS[0]}
             MINOR=${VERSION_PARTS[1]}
             PATCH=${VERSION_PARTS[2]}
-            
+
             case $BUMP_TYPE in
               major)
                 NEW_VERSION="$((MAJOR + 1)).0.0"
@@ -108,22 +108,22 @@ jobs:
                 ;;
             esac
           fi
-          
+
           echo "New version: $NEW_VERSION"
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "has_changes=true" >> $GITHUB_OUTPUT
-          
+
           # Generate incremental changelog (only commits since last release)
           if [ "$COMMIT_RANGE" = "HEAD" ]; then
             CHANGELOG_CONTENT=$(git log --pretty=format:"- %s (%h)" --grep="^feat" --grep="^fix" --grep="BREAKING CHANGE" --perl-regexp | head -20)
           else
             CHANGELOG_CONTENT=$(git log $COMMIT_RANGE --pretty=format:"- %s (%h)" --grep="^feat" --grep="^fix" --grep="BREAKING CHANGE" --perl-regexp | head -20)
           fi
-          
+
           if [ -z "$CHANGELOG_CONTENT" ]; then
             CHANGELOG_CONTENT="- Initial release"
           fi
-          
+
           echo "changelog_content<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG_CONTENT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -132,10 +132,10 @@ jobs:
         if: steps.version.outputs.has_changes == 'true'
         run: |
           NEW_VERSION="${{ steps.version.outputs.new_version }}"
-          
+
           # Update package.json version
           npm version $NEW_VERSION --no-git-tag-version
-          
+
           # Create and push tag
           git add package.json package-lock.json
           git commit -m "chore(release): v$NEW_VERSION"
