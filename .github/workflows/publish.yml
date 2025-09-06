@@ -122,19 +122,16 @@ jobs:
           echo "$CHANGELOG_CONTENT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Update package version and create tag
+      - name: Create release tag
         if: steps.version.outputs.has_changes == 'true'
         run: |
           NEW_VERSION="${{ steps.version.outputs.new_version }}"
 
-          # Update package.json version
+          # Update package.json version for building only (no git operations)
           npm version $NEW_VERSION --no-git-tag-version
 
-          # Create and push tag
-          git add package.json package-lock.json
-          git commit -m "chore(release): v$NEW_VERSION"
+          # Create and push tag based on current commit (no new commit needed)
           git tag "v$NEW_VERSION"
-          git push origin main
           git push origin "v$NEW_VERSION"
 
       - name: Build package
