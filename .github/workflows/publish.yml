@@ -20,12 +20,6 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Fetch upstream changes
-        run: |
-          git remote add upstream https://github.com/ai-shifu/remark-flow.git || true
-          git fetch upstream
-          git checkout upstream/main
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -140,7 +134,7 @@ jobs:
           git add package.json package-lock.json
           git commit -m "chore(release): v$NEW_VERSION"
           git tag "v$NEW_VERSION"
-          git push origin upstream/main:main
+          git push origin main
           git push origin "v$NEW_VERSION"
 
       - name: Build package
