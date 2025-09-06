@@ -73,20 +73,35 @@ jobs:
       - name: Check for conventional commits since last release
         id: check_commits
         run: |
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -z "$LAST_TAG" ]; then
+          # Get the latest published version from npm
+          LATEST_NPM_VERSION=$(npm view remark-flow version 2>/dev/null || echo "")
+          
+          if [ -z "$LATEST_NPM_VERSION" ]; then
             echo "has_changes=true" >> $GITHUB_OUTPUT
-            echo "No previous tags found, creating first release"
+            echo "No published version found on npm, creating first release"
+            echo "npm_version=" >> $GITHUB_OUTPUT
           else
-            COMMITS=$(git log ${LAST_TAG}..HEAD --oneline | grep -E "^[a-f0-9]+ (feat|fix|BREAKING CHANGE)" || true)
+            echo "Latest npm version: $LATEST_NPM_VERSION"
+            
+            # Find the git tag corresponding to the npm version
+            NPM_TAG="v$LATEST_NPM_VERSION"
+            if git rev-parse "$NPM_TAG" >/dev/null 2>&1; then
+              echo "Found corresponding git tag: $NPM_TAG"
+              COMMITS=$(git log ${NPM_TAG}..HEAD --oneline | grep -E "^[a-f0-9]+ (feat|fix|BREAKING CHANGE)" || true)
+            else
+              echo "No git tag found for npm version, checking all commits"
+              COMMITS=$(git log --oneline | grep -E "^[a-f0-9]+ (feat|fix|BREAKING CHANGE)" || true)
+            fi
+            
             if [ -n "$COMMITS" ]; then
               echo "has_changes=true" >> $GITHUB_OUTPUT
-              echo "Found commits requiring version bump:"
+              echo "Found commits requiring version bump since npm version $LATEST_NPM_VERSION:"
               echo "$COMMITS"
             else
               echo "has_changes=false" >> $GITHUB_OUTPUT
-              echo "No conventional commits found since last release"
+              echo "No conventional commits found since npm version $LATEST_NPM_VERSION"
             fi
+            echo "npm_version=$LATEST_NPM_VERSION" >> $GITHUB_OUTPUT
           fi
 
       - name: Install standard-version
@@ -97,12 +112,17 @@ jobs:
         id: version
         if: steps.check_commits.outputs.has_changes == 'true'
         run: |
-          # Create initial tag if none exists
-          if ! git describe --tags --abbrev=0 2>/dev/null; then
-            echo "Creating initial release..."
+          NPM_VERSION="${{ steps.check_commits.outputs.npm_version }}"
+          
+          if [ -z "$NPM_VERSION" ]; then
+            echo "Creating first release from standard version 1.0.0..."
+            # Update package.json to standard version first
+            npm version 1.0.0 --no-git-tag-version
             standard-version --first-release
           else
-            echo "Creating new version..."
+            echo "Creating new version based on npm version: $NPM_VERSION"
+            # Update package.json to match npm version first, then bump
+            npm version $NPM_VERSION --no-git-tag-version
             standard-version
           fi
 
@@ -241,5 +261,5 @@ jobs:
             - [Documentation](https://github.com/${{ github.repository }}#readme)
             - [Issues](https://github.com/${{ github.repository }}/issues)
           draft: false
-          prerelease: ${{ contains(needs.version.outputs.new_version, 'alpha') || contains(needs.version.outputs.new_version, 'beta') || contains(needs.version.outputs.new_version, 'rc') }}
+          prerelease: false
           token: ${{ secrets.GITHUB_TOKEN }}
