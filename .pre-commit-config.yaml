@@ -21,10 +21,6 @@ repos:
       - id: trailing-whitespace
         args: ['--markdown-linebreak-ext=md']
         exclude: ^package-lock\.json$
-      - id: pretty-format-json
-        args: ['--autofix', '--indent=2', '--no-ensure-ascii']
-        files: \.(json)$
-        exclude: ^package-lock\.json$
   - repo: https://github.com/commitizen-tools/commitizen
     rev: v4.8.3
     hooks:
@@ -37,7 +33,7 @@ repos:
         name: Prettier
         entry: prettier
         language: node
-        files: ^src/.*\.(js|jsx|ts|tsx|mjs|cjs|css|scss|json)$
+        files: \.(js|jsx|ts|tsx|mjs|cjs|css|scss|json)$
         args: ['--write']
         additional_dependencies: ['prettier@^3.6.2']
         pass_filenames: true
