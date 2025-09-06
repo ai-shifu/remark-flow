@@ -73,7 +73,7 @@ jobs:
             fi
 
             # Check for commits requiring version bump
-            COMMITS=$(git log $COMMIT_RANGE --oneline --grep="^feat" --grep="^fix" --grep="BREAKING CHANGE" --perl-regexp | head -20)
+            COMMITS=$(git log $COMMIT_RANGE --oneline --grep="^feat:" --grep="^fix:" --grep="BREAKING CHANGE" --perl-regexp | head -20)
 
             if [ -z "$COMMITS" ]; then
               echo "No conventional commits found since last release"
@@ -84,7 +84,7 @@ jobs:
             # Determine version bump type
             if git log $COMMIT_RANGE --pretty=format:"%s" | grep -q "BREAKING CHANGE"; then
               BUMP_TYPE="major"
-            elif git log $COMMIT_RANGE --pretty=format:"%s" | grep -q "^feat"; then
+            elif git log $COMMIT_RANGE --pretty=format:"%s" | grep -q "^feat:"; then
               BUMP_TYPE="minor"
             else
               BUMP_TYPE="patch"
@@ -115,9 +115,9 @@ jobs:
 
           # Generate incremental changelog (only commits since last release)
           if [ "$COMMIT_RANGE" = "HEAD" ]; then
-            CHANGELOG_CONTENT=$(git log --pretty=format:"- %s (%h)" --grep="^feat" --grep="^fix" --grep="BREAKING CHANGE" --perl-regexp | head -20)
+            CHANGELOG_CONTENT=$(git log --pretty=format:"- %s (%h)" --grep="^feat:" --grep="^fix:" --grep="BREAKING CHANGE" --perl-regexp | head -20)
           else
-            CHANGELOG_CONTENT=$(git log $COMMIT_RANGE --pretty=format:"- %s (%h)" --grep="^feat" --grep="^fix" --grep="BREAKING CHANGE" --perl-regexp | head -20)
+            CHANGELOG_CONTENT=$(git log $COMMIT_RANGE --pretty=format:"- %s (%h)" --grep="^feat:" --grep="^fix:" --grep="BREAKING CHANGE" --perl-regexp | head -20)
           fi
 
           if [ -z "$CHANGELOG_CONTENT" ]; then
