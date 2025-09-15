@@ -22,7 +22,7 @@ repos:
         args: ['--markdown-linebreak-ext=md']
         exclude: ^package-lock\.json$
   - repo: https://github.com/commitizen-tools/commitizen
-    rev: v4.8.3
+    rev: v4.9.1
     hooks:
       - id: commitizen
         stages: [commit-msg]
