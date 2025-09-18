@@ -1,35 +1,11 @@
 import remarkCustomVariable from '../src/remark-custom-variable';
-import type { Node, Parent, Literal } from 'unist';
+import {
+  createTextNode,
+  createParentNode,
+  findCustomNodes,
+} from './test-utils';
 
 describe('ButtonValues Fallback Tests', () => {
-  function createTextNode(value: string): Literal {
-    return { type: 'text', value };
-  }
-
-  function createParentNode(children: Node[]): Parent {
-    return { type: 'paragraph', children };
-  }
-
-  function findCustomNodes(tree: Node): any[] {
-    const customNodes: any[] = [];
-
-    function visit(node: any) {
-      if (
-        node.type === 'element' &&
-        (node.data?.hName === 'custom-button' ||
-          node.data?.hName === 'custom-variable')
-      ) {
-        customNodes.push(node);
-      }
-      if (node.children) {
-        node.children.forEach(visit);
-      }
-    }
-
-    visit(tree);
-    return customNodes;
-  }
-
   describe('Custom Variable - buttonValues always exists when has buttons', () => {
     test('should have buttonValues equal to buttonTexts when no // separator', () => {
       const textNode = createTextNode(
@@ -202,6 +178,125 @@ describe('ButtonValues Fallback Tests', () => {
       expect(props.buttonTexts).toEqual(['Option A', 'Option B', 'Option C']);
       expect(props.buttonValues).toEqual(['opt_a', 'opt_b', 'opt_c']);
       expect(props.variableName).toBeUndefined();
+    });
+  });
+
+  describe('Multi-Select ButtonValues Fallback Tests', () => {
+    test('should have buttonValues equal to buttonTexts for multi-select without //', () => {
+      const textNode = createTextNode(
+        'Select: ?[%{{skills}} JavaScript||TypeScript||Python]'
+      );
+      const parentNode = createParentNode([textNode]);
+
+      const plugin = remarkCustomVariable();
+      plugin(parentNode);
+
+      const customNodes = findCustomNodes(parentNode);
+      expect(customNodes).toHaveLength(1);
+
+      const props = customNodes[0].data.hProperties;
+      expect(props.variableName).toBe('skills');
+      expect(props.buttonTexts).toEqual(['JavaScript', 'TypeScript', 'Python']);
+      expect(props.buttonValues).toEqual([
+        'JavaScript',
+        'TypeScript',
+        'Python',
+      ]); // fallback to buttonTexts
+      expect(props.isMultiSelect).toBe(true);
+    });
+
+    test('should have different buttonValues for multi-select with // separator', () => {
+      const textNode = createTextNode(
+        'Select: ?[%{{lang}} JavaScript//js||TypeScript//ts||Python//py]'
+      );
+      const parentNode = createParentNode([textNode]);
+
+      const plugin = remarkCustomVariable();
+      plugin(parentNode);
+
+      const customNodes = findCustomNodes(parentNode);
+      expect(customNodes).toHaveLength(1);
+
+      const props = customNodes[0].data.hProperties;
+      expect(props.variableName).toBe('lang');
+      expect(props.buttonTexts).toEqual(['JavaScript', 'TypeScript', 'Python']);
+      expect(props.buttonValues).toEqual(['js', 'ts', 'py']); // custom values
+      expect(props.isMultiSelect).toBe(true);
+    });
+
+    test('should handle mixed scenarios in multi-select - some with //, some without', () => {
+      const textNode = createTextNode(
+        'Select: ?[%{{stack}} Frontend||Backend//be||Fullstack]'
+      );
+      const parentNode = createParentNode([textNode]);
+
+      const plugin = remarkCustomVariable();
+      plugin(parentNode);
+
+      const customNodes = findCustomNodes(parentNode);
+      expect(customNodes).toHaveLength(1);
+
+      const props = customNodes[0].data.hProperties;
+      expect(props.variableName).toBe('stack');
+      expect(props.buttonTexts).toEqual(['Frontend', 'Backend', 'Fullstack']);
+      expect(props.buttonValues).toEqual(['Frontend', 'be', 'Fullstack']); // mixed fallback/custom
+      expect(props.isMultiSelect).toBe(true);
+    });
+
+    test('should have buttonValues for single multi-select button without //', () => {
+      const textNode = createTextNode('Action: ?[%{{choice}} confirm]');
+      const parentNode = createParentNode([textNode]);
+
+      const plugin = remarkCustomVariable();
+      plugin(parentNode);
+
+      const customNodes = findCustomNodes(parentNode);
+      expect(customNodes).toHaveLength(1);
+
+      const props = customNodes[0].data.hProperties;
+      expect(props.variableName).toBe('choice');
+      expect(props.buttonTexts).toEqual(['confirm']);
+      expect(props.buttonValues).toEqual(['confirm']); // fallback to buttonTexts
+      expect(props.isMultiSelect).toBe(false); // single button is not multi-select
+    });
+
+    test('should handle multi-select with text input fallback', () => {
+      const textNode = createTextNode(
+        'Tags: ?[%{{tags}} React||Vue||Angular||...Other framework]'
+      );
+      const parentNode = createParentNode([textNode]);
+
+      const plugin = remarkCustomVariable();
+      plugin(parentNode);
+
+      const customNodes = findCustomNodes(parentNode);
+      expect(customNodes).toHaveLength(1);
+
+      const props = customNodes[0].data.hProperties;
+      expect(props.variableName).toBe('tags');
+      expect(props.buttonTexts).toEqual(['React', 'Vue', 'Angular']);
+      expect(props.buttonValues).toEqual(['React', 'Vue', 'Angular']); // fallback to buttonTexts
+      expect(props.placeholder).toBe('Other framework');
+      expect(props.isMultiSelect).toBe(true);
+    });
+
+    test('should handle Chinese multi-select with mixed fallback', () => {
+      const textNode = createTextNode(
+        'Select: ?[%{{技能}} 前端开发||后端开发//backend||全栈工程师]'
+      );
+      const parentNode = createParentNode([textNode]);
+
+      const plugin = remarkCustomVariable();
+      plugin(parentNode);
+
+      const customNodes = findCustomNodes(parentNode);
+      expect(customNodes).toHaveLength(1);
+
+      const props = customNodes[0].data.hProperties;
+      expect(props.variableName).toBe('技能');
+      expect(props.buttonTexts).toEqual(['前端开发', '后端开发', '全栈工程师']);
+      expect(props.buttonValues).toEqual(['前端开发', 'backend', '全栈工程师']); // mixed
+      expect(props.isMultiSelect).toBe(true);
     });
   });
 });

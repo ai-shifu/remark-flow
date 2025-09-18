@@ -37,7 +37,8 @@ const processor = remark().use(remarkFlow);
 const markdown = `
 # Welcome to Interactive Content!
 
-Choose your preference: ?[Option A | Option B | Option C]
+Choose one option: ?[Option A | Option B | Option C]
+Choose multiple skills: ?[%{{skills}} JavaScript||TypeScript||Python]
 Enter your name: ?[%{{username}}...Please enter your name]
 `;
 
@@ -74,7 +75,7 @@ Action: ?[Save Changes//save | Cancel//cancel]
 ?[Yes | No | Maybe]
 ```
 
-**Output:** `{ buttonTexts: ["Yes", "No", "Maybe"], buttonValues: ["Yes", "No", "Maybe"] }`
+**Output:** `{ buttonTexts: ["Yes", "No", "Maybe"], buttonValues: ["Yes", "No", "Maybe"], isMultiSelect: false }`
 
 ### 2. Custom Button Values
 
@@ -95,19 +96,34 @@ Action: ?[Save Changes//save | Cancel//cancel]
 
 **Output:** `{ variableName: "username", placeholder: "Enter your name" }`
 
-### 4. Variable Button Selection
+### 4. Variable Button Selection (Single-Select)
 
 ```markdown
 ?[%{{theme}} Light | Dark]
 ?[%{{size}} Small//S | Medium//M | Large//L]
 ```
 
-**Output:** `{ variableName: "theme", buttonTexts: ["Light", "Dark"], buttonValues: ["Light", "Dark"] }`
+**Output:** `{ variableName: "theme", buttonTexts: ["Light", "Dark"], buttonValues: ["Light", "Dark"], isMultiSelect: false }`
 
-### 5. Combined: Buttons + Text Input
+### 5. Variable Button Selection (Multi-Select)
 
 ```markdown
+?[%{{skills}} JavaScript||TypeScript||Python]
+?[%{{lang}} JS//JavaScript||TS//TypeScript||PY//Python]
+```
+
+**Output:** `{ variableName: "skills", buttonTexts: ["JavaScript", "TypeScript", "Python"], buttonValues: ["JavaScript", "TypeScript", "Python"], isMultiSelect: true }`
+
+### 6. Combined: Buttons + Text Input
+
+```markdown
+# Single-select with text input
+
 ?[%{{size}} Small//S | Medium//M | Large//L | ...custom size]
+
+# Multi-select with text input
+
+?[%{{tags}} React||Vue||Angular||...Other framework]
 ```
 
 **Output:**
@@ -121,7 +137,27 @@ Action: ?[Save Changes//save | Cancel//cancel]
 }
 ```
 
-### 6. Unicode & International Support
+### 7. Separator Priority Rules
+
+The first separator type encountered determines the parsing mode:
+
+```markdown
+# Single-select mode (| appears first)
+
+?[%{{option}} A | B||C] # Results in: ["A", "B||C"]
+
+# Multi-select mode (|| appears first)
+
+?[%{{option}} A||B | C] # Results in: ["A", "B | C"]
+```
+
+**Key Points:**
+
+- `|` = Single-select mode, `||` becomes part of button values
+- `||` = Multi-select mode, `|` becomes part of button values
+- First separator type wins and determines the entire parsing behavior
+
+### 8. Unicode & International Support
 
 ```markdown
 ?[%{{语言}} English//en | 中文//zh | 日本語//ja]

@@ -1,35 +1,12 @@
 import remarkFlow from '../src/remark-flow';
-import type { Node, Parent, Literal } from 'unist';
+import type { Literal } from 'unist';
+import {
+  createTextNode,
+  createParentNode,
+  findCustomNodes,
+} from './test-utils';
 
 describe('remarkFlow', () => {
-  function createTextNode(value: string): Literal {
-    return { type: 'text', value };
-  }
-
-  function createParentNode(children: Node[]): Parent {
-    return { type: 'paragraph', children };
-  }
-
-  function findCustomNodes(tree: Node): any[] {
-    const customNodes: any[] = [];
-
-    function visit(node: any) {
-      if (
-        node.type === 'element' &&
-        (node.data?.hName === 'custom-button' ||
-          node.data?.hName === 'custom-variable')
-      ) {
-        customNodes.push(node);
-      }
-      if (node.children) {
-        node.children.forEach(visit);
-      }
-    }
-
-    visit(tree);
-    return customNodes;
-  }
-
   test('should process variable syntax first, then button syntax', () => {
     const textNode1 = createTextNode('Variable: ?[%{{color}} red | blue]');
     const textNode2 = createTextNode(' Button: ?[Submit]');
@@ -128,8 +105,8 @@ describe('remarkFlow', () => {
     expect(customNodes[0].data.hProperties.placeholder).toBe('enter your name');
   });
 
-  test('should handle Chinese button text', () => {
-    const textNode1 = createTextNode('变量: ?[%{{color}} 红色｜蓝色]');
+  test('should handle Chinese button text with valid separators', () => {
+    const textNode1 = createTextNode('变量: ?[%{{color}} 红色 | 蓝色]');
     const textNode2 = createTextNode(' 按钮: ?[提交]');
     const parentNode = createParentNode([textNode1, textNode2]);
 
@@ -154,6 +131,135 @@ describe('remarkFlow', () => {
     expect(buttonNode).toBeDefined();
     expect(buttonNode.data.hProperties.buttonTexts).toEqual(['提交']);
     expect(buttonNode.data.hProperties.variableName).toBeUndefined();
+  });
+
+  test('should handle multi-select button syntax', () => {
+    const textNode = createTextNode(
+      'Select options: ?[%{{preferences}} Option A||Option B||Option C]'
+    );
+    const parentNode = createParentNode([textNode]);
+
+    const plugin = remarkFlow();
+    plugin(parentNode);
+
+    const customNodes = findCustomNodes(parentNode);
+    expect(customNodes).toHaveLength(1);
+    expect(customNodes[0].data.hName).toBe('custom-variable');
+    expect(customNodes[0].data.hProperties.variableName).toBe('preferences');
+    expect(customNodes[0].data.hProperties.buttonTexts).toEqual([
+      'Option A',
+      'Option B',
+      'Option C',
+    ]);
+    expect(customNodes[0].data.hProperties.buttonValues).toEqual([
+      'Option A',
+      'Option B',
+      'Option C',
+    ]);
+    expect(customNodes[0].data.hProperties.isMultiSelect).toBe(true);
+  });
+
+  test('should handle multi-select with custom values', () => {
+    const textNode = createTextNode(
+      'Choose themes: ?[%{{themes}} Light Theme//light||Dark Theme//dark||High Contrast//hc]'
+    );
+    const parentNode = createParentNode([textNode]);
+
+    const plugin = remarkFlow();
+    plugin(parentNode);
+
+    const customNodes = findCustomNodes(parentNode);
+    expect(customNodes).toHaveLength(1);
+    expect(customNodes[0].data.hName).toBe('custom-variable');
+    expect(customNodes[0].data.hProperties.variableName).toBe('themes');
+    expect(customNodes[0].data.hProperties.buttonTexts).toEqual([
+      'Light Theme',
+      'Dark Theme',
+      'High Contrast',
+    ]);
+    expect(customNodes[0].data.hProperties.buttonValues).toEqual([
+      'light',
+      'dark',
+      'hc',
+    ]);
+    expect(customNodes[0].data.hProperties.isMultiSelect).toBe(true);
+  });
+
+  test('should handle multi-select with text input', () => {
+    const textNode = createTextNode(
+      'Select colors: ?[%{{colors}} Red||Blue||Green||...Custom color name]'
+    );
+    const parentNode = createParentNode([textNode]);
+
+    const plugin = remarkFlow();
+    plugin(parentNode);
+
+    const customNodes = findCustomNodes(parentNode);
+    expect(customNodes).toHaveLength(1);
+    expect(customNodes[0].data.hName).toBe('custom-variable');
+    expect(customNodes[0].data.hProperties.variableName).toBe('colors');
+    expect(customNodes[0].data.hProperties.buttonTexts).toEqual([
+      'Red',
+      'Blue',
+      'Green',
+    ]);
+    expect(customNodes[0].data.hProperties.buttonValues).toEqual([
+      'Red',
+      'Blue',
+      'Green',
+    ]);
+    expect(customNodes[0].data.hProperties.placeholder).toBe(
+      'Custom color name'
+    );
+    expect(customNodes[0].data.hProperties.isMultiSelect).toBe(true);
+  });
+
+  test('should handle Chinese multi-select button text', () => {
+    const textNode = createTextNode(
+      '选择选项: ?[%{{选项}} 选项A||选项B||选项C]'
+    );
+    const parentNode = createParentNode([textNode]);
+
+    const plugin = remarkFlow();
+    plugin(parentNode);
+
+    const customNodes = findCustomNodes(parentNode);
+    expect(customNodes).toHaveLength(1);
+    expect(customNodes[0].data.hName).toBe('custom-variable');
+    expect(customNodes[0].data.hProperties.variableName).toBe('选项');
+    expect(customNodes[0].data.hProperties.buttonTexts).toEqual([
+      '选项A',
+      '选项B',
+      '选项C',
+    ]);
+    expect(customNodes[0].data.hProperties.isMultiSelect).toBe(true);
+  });
+
+  test('should distinguish between single and multi-select', () => {
+    const textNode = createTextNode(
+      'Single: ?[%{{single}} A | B] Multi: ?[%{{multi}} X||Y]'
+    );
+    const parentNode = createParentNode([textNode]);
+
+    const plugin = remarkFlow();
+    plugin(parentNode);
+
+    const customNodes = findCustomNodes(parentNode);
+    expect(customNodes).toHaveLength(2);
+
+    // Find nodes by variable name
+    const singleNode = customNodes.find(
+      node => node.data.hProperties.variableName === 'single'
+    );
+    const multiNode = customNodes.find(
+      node => node.data.hProperties.variableName === 'multi'
+    );
+
+    expect(singleNode).toBeDefined();
+    expect(singleNode.data.hProperties.isMultiSelect).toBe(false);
+
+    expect(multiNode).toBeDefined();
+    expect(multiNode.data.hProperties.isMultiSelect).toBe(true);
   });
 
   test('should not modify nodes without any special syntax', () => {

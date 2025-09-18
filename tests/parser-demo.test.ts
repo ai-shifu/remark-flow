@@ -16,6 +16,7 @@ describe('InteractionParser Sample and Test', () => {
       expect(result).toEqual({
         variableName: 'name',
         placeholder: 'Enter your name',
+        isMultiSelect: false,
       });
     });
 
@@ -40,6 +41,7 @@ describe('InteractionParser Sample and Test', () => {
         buttonTexts: ['Red', 'Blue'],
         buttonValues: ['red', 'blue'],
         placeholder: 'Custom color',
+        isMultiSelect: false,
       });
     });
   });
@@ -77,6 +79,74 @@ describe('InteractionParser Sample and Test', () => {
     });
   });
 
+  describe('Multi-Select Syntax Tests', () => {
+    test('Test Multi-Select Button Parsing', () => {
+      const result = parser.parseToRemarkFormat(
+        '?[%{{options}} Option A||Option B||Option C]'
+      );
+
+      expect(result).toEqual({
+        variableName: 'options',
+        buttonTexts: ['Option A', 'Option B', 'Option C'],
+        buttonValues: ['Option A', 'Option B', 'Option C'],
+        isMultiSelect: true,
+      });
+    });
+
+    test('Test Multi-Select with Custom Values', () => {
+      const result = parser.parseToRemarkFormat(
+        '?[%{{theme}} Light Theme//light||Dark Theme//dark||Auto//auto]'
+      );
+
+      expect(result).toEqual({
+        variableName: 'theme',
+        buttonTexts: ['Light Theme', 'Dark Theme', 'Auto'],
+        buttonValues: ['light', 'dark', 'auto'],
+        isMultiSelect: true,
+      });
+    });
+
+    test('Test Multi-Select with Text Input', () => {
+      const result = parser.parseToRemarkFormat(
+        '?[%{{colors}} Red||Blue||Green||...Custom color]'
+      );
+
+      expect(result).toEqual({
+        variableName: 'colors',
+        buttonTexts: ['Red', 'Blue', 'Green'],
+        buttonValues: ['Red', 'Blue', 'Green'],
+        placeholder: 'Custom color',
+        isMultiSelect: true,
+      });
+    });
+
+    test('Test Multi-Select Type Detection', () => {
+      const result1 = parser.parse('?[%{{options}} A||B||C]');
+      expect(result1.type).toBe(InteractionType.BUTTONS_MULTI_SELECT);
+      if ('isMultiSelect' in result1) {
+        expect(result1.isMultiSelect).toBe(true);
+      }
+
+      const result2 = parser.parse('?[%{{options}} A||B||...custom]');
+      expect(result2.type).toBe(InteractionType.BUTTONS_MULTI_WITH_TEXT);
+      if ('isMultiSelect' in result2) {
+        expect(result2.isMultiSelect).toBe(true);
+      }
+    });
+
+    test('Test Single vs Multi-Select Distinction', () => {
+      const singleSelect = parser.parseToRemarkFormat(
+        '?[%{{theme}} Light | Dark]'
+      );
+      const multiSelect = parser.parseToRemarkFormat(
+        '?[%{{theme}} Light||Dark]'
+      );
+
+      expect(singleSelect.isMultiSelect).toBe(false);
+      expect(multiSelect.isMultiSelect).toBe(true);
+    });
+  });
+
   describe('Actual Usage Scenario Demo', () => {
     test('Simulate User Input Scenario', () => {
       const testCases = [
@@ -95,6 +165,16 @@ describe('InteractionParser Sample and Test', () => {
             '?[%{{size}} Small//S | Medium//M | Large//L | ...Other sizes]',
           expected: 'BUTTONS_WITH_TEXT',
           description: 'Button + Text Input',
+        },
+        {
+          input: '?[%{{options}} A||B||C]',
+          expected: 'BUTTONS_MULTI_SELECT',
+          description: 'Multi-Select Buttons',
+        },
+        {
+          input: '?[%{{colors}} Red||Blue||...Custom]',
+          expected: 'BUTTONS_MULTI_WITH_TEXT',
+          description: 'Multi-Select + Text Input',
         },
         {
           input: '?[Confirm | Cancel]',
