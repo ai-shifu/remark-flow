@@ -1,35 +1,11 @@
 import remarkInteraction from '../src/remark-interaction';
-import type { Node, Parent, Literal } from 'unist';
+import {
+  createTextNode,
+  createParentNode,
+  findCustomNodes,
+} from './test-utils';
 
 describe('Chinese Variable Names Support', () => {
-  function createTextNode(value: string): Literal {
-    return { type: 'text', value };
-  }
-
-  function createParentNode(children: Node[]): Parent {
-    return { type: 'paragraph', children };
-  }
-
-  function findCustomNodes(tree: Node): any[] {
-    const customNodes: any[] = [];
-
-    function visit(node: any) {
-      if (
-        node.type === 'element' &&
-        (node.data?.hName === 'custom-button' ||
-          node.data?.hName === 'custom-variable')
-      ) {
-        customNodes.push(node);
-      }
-      if (node.children) {
-        node.children.forEach(visit);
-      }
-    }
-
-    visit(tree);
-    return customNodes;
-  }
-
   test('should support pure Chinese variable names', () => {
     const textNode = createTextNode('选择: ?[%{{颜色}} 红色 | 蓝色 | 绿色]');
     const parentNode = createParentNode([textNode]);

@@ -37,7 +37,8 @@ const processor = remark().use(remarkFlow);
 const markdown = `
 # 欢迎来到交互式内容！
 
-选择你的偏好：?[选项 A | 选项 B | 选项 C]
+单选选项：?[选项 A | 选项 B | 选项 C]
+多选技能：?[%{{skills}} JavaScript||TypeScript||Python]
 输入你的姓名：?[%{{username}}...请输入你的姓名]
 `;
 
@@ -74,7 +75,7 @@ const result = processor.processSync(`
 ?[是 | 否 | 也许]
 ```
 
-**输出：** `{ buttonTexts: ["是", "否", "也许"], buttonValues: ["是", "否", "也许"] }`
+**输出：** `{ buttonTexts: ["是", "否", "也许"], buttonValues: ["是", "否", "也许"], isMultiSelect: false }`
 
 ### 2. 自定义按钮值
 
@@ -102,12 +103,27 @@ const result = processor.processSync(`
 ?[%{{size}} 小//S | 中//M | 大//L]
 ```
 
-**输出：** `{ variableName: "theme", buttonTexts: ["浅色", "深色"], buttonValues: ["浅色", "深色"] }`
+**输出：** `{ variableName: "theme", buttonTexts: ["浅色", "深色"], buttonValues: ["浅色", "深色"], isMultiSelect: false }`
 
-### 5. 组合：按钮 + 文本输入
+### 5. 变量按钮选择（多选）
 
 ```markdown
+?[%{{skills}} JavaScript||TypeScript||Python]
+?[%{{lang}} JS//JavaScript||TS//TypeScript||PY//Python]
+```
+
+**输出：** `{ variableName: "skills", buttonTexts: ["JavaScript", "TypeScript", "Python"], buttonValues: ["JavaScript", "TypeScript", "Python"], isMultiSelect: true }`
+
+### 6. 组合：按钮 + 文本输入
+
+```markdown
+# 单选 + 文本输入
+
 ?[%{{size}} 小//S | 中//M | 大//L | ...自定义尺寸]
+
+# 多选 + 文本输入
+
+?[%{{tags}} React||Vue||Angular||...其他框架]
 ```
 
 **输出：**
@@ -121,7 +137,27 @@ const result = processor.processSync(`
 }
 ```
 
-### 6. Unicode 和国际化支持
+### 7. 分隔符优先级规则
+
+第一个遇到的分隔符类型决定解析模式：
+
+```markdown
+# 单选模式（| 首先出现）
+
+?[%{{option}} A | B||C] # 结果：["A", "B||C"]
+
+# 多选模式（|| 首先出现）
+
+?[%{{option}} A||B | C] # 结果：["A", "B | C"]
+```
+
+**要点：**
+
+- `|` = 单选模式，`||` 成为按钮值的一部分
+- `||` = 多选模式，`|` 成为按钮值的一部分
+- 第一个分隔符类型获胜并决定整个解析行为
+
+### 8. Unicode 和国际化支持
 
 ```markdown
 ?[%{{语言}} English//en | 中文//zh | 日本語//ja]
@@ -159,6 +195,7 @@ interface CustomVariableNode extends Node {
     buttonTexts?: string[]; // 按钮显示文本
     buttonValues?: string[]; // 对应的按钮值
     placeholder?: string; // 文本输入占位符
+    isMultiSelect?: boolean; // 是否为多选模式
   };
 }
 ```
@@ -202,6 +239,7 @@ const markdown = `
 # 选择您的偏好
 
 选择语言：?[%{{language}} JavaScript | Python | TypeScript | Go]
+选择技能：?[%{{skills}} React||Vue||Angular]
 输入姓名：?[%{{username}}...您的全名]
 操作：?[保存//save | 取消//cancel]
 `;
@@ -227,8 +265,13 @@ import remarkHtml from 'remark-html';
 function createCustomRenderer() {
   return (tree: Node) => {
     visit(tree, 'custom-variable', (node: any) => {
-      const { variableName, buttonTexts, buttonValues, placeholder } =
-        node.data;
+      const {
+        variableName,
+        buttonTexts,
+        buttonValues,
+        placeholder,
+        isMultiSelect,
+      } = node.data;
 
       if (buttonTexts && buttonTexts.length > 0) {
         // 渲染为按钮组
@@ -243,7 +286,7 @@ function createCustomRenderer() {
 
         node.type = 'html';
         node.value = `
-          <div class="button-group" data-variable="${variableName}">
+          <div class="button-group" data-variable="${variableName}" data-multi-select="${isMultiSelect}">
             ${buttonsHtml}
           </div>
         `;
@@ -285,7 +328,7 @@ import remarkReact from 'remark-react';
 import remarkFlow from 'remark-flow';
 
 // 交互元素的自定义 React 组件
-const InteractiveButton = ({ variableName, buttonTexts, buttonValues, onSelect }) => (
+const InteractiveButton = ({ variableName, buttonTexts, buttonValues, isMultiSelect, onSelect }) => (
   <div className="flex gap-2">
     {buttonTexts.map((text, i) => (
       <button
@@ -322,7 +365,7 @@ function CustomMarkdownRenderer() {
     .use(remarkReact, {
       remarkReactComponents: {
         'custom-variable': ({ node }) => {
-          const { variableName, buttonTexts, buttonValues, placeholder } = node.data;
+          const { variableName, buttonTexts, buttonValues, placeholder, isMultiSelect } = node.data;
 
           if (buttonTexts?.length > 0) {
             return (
@@ -330,6 +373,7 @@ function CustomMarkdownRenderer() {
                 variableName={variableName}
                 buttonTexts={buttonTexts}
                 buttonValues={buttonValues}
+                isMultiSelect={isMultiSelect}
                 onSelect={handleInteraction}
               />
             );
@@ -354,6 +398,7 @@ function CustomMarkdownRenderer() {
   # 交互式表单
 
   选择语言：?[%{{lang}} English | 中文 | Español]
+  选择技能：?[%{{skills}} React||Vue||Angular]
   您的姓名：?[%{{name}}...请输入您的姓名]
   操作：?[提交//submit | 重置//reset]
   `;
@@ -376,6 +421,7 @@ function InteractiveChat() {
   # 欢迎！👋
 
   选择您的偏好：?[%{{language}} JavaScript | Python | TypeScript]
+  选择技能：?[%{{skills}} React||Vue||Angular]
   输入您的姓名：?[%{{username}}...您的全名]
   准备开始：?[开始吧！//start]
   `;

@@ -1,31 +1,12 @@
 import remarkCustomVariable from '../src/remark-custom-variable';
-import type { Node, Parent, Literal } from 'unist';
+import type { Literal } from 'unist';
+import {
+  createTextNode,
+  createParentNode,
+  findCustomVariableNodes,
+} from './test-utils';
 
 describe('remarkCustomVariable', () => {
-  function createTextNode(value: string): Literal {
-    return { type: 'text', value };
-  }
-
-  function createParentNode(children: Node[]): Parent {
-    return { type: 'paragraph', children };
-  }
-
-  function findCustomVariableNodes(tree: Node): any[] {
-    const customVariables: any[] = [];
-
-    function visit(node: any) {
-      if (node.type === 'element' && node.data?.hName === 'custom-variable') {
-        customVariables.push(node);
-      }
-      if (node.children) {
-        node.children.forEach(visit);
-      }
-    }
-
-    visit(tree);
-    return customVariables;
-  }
-
   test('should parse buttons with placeholder format', () => {
     const textNode = createTextNode(
       'Choose: ?[%{{color}} red | blue | green | ... custom color]'
@@ -94,7 +75,7 @@ describe('remarkCustomVariable', () => {
     expect(props.placeholder).toBe('enter your name');
   });
 
-  test('should handle Chinese separator (｜)', () => {
+  test('should not parse Chinese full-width separator (｜) as individual buttons', () => {
     const textNode = createTextNode('Choose: ?[%{{fruit}} 苹果｜香蕉｜橘子]');
     const parentNode = createParentNode([textNode]);
 
@@ -106,10 +87,12 @@ describe('remarkCustomVariable', () => {
 
     const props = customVariables[0].data.hProperties;
     expect(props.variableName).toBe('fruit');
-    expect(props.buttonTexts).toEqual(['苹果', '香蕉', '橘子']);
+    // Should treat the entire content as a single button since ｜ is not a valid separator
+    expect(props.buttonTexts).toEqual(['苹果｜香蕉｜橘子']);
+    expect(props.buttonValues).toEqual(['苹果｜香蕉｜橘子']);
   });
 
-  test('should handle mixed separators', () => {
+  test('should handle mixed separators - only half-width pipes are valid', () => {
     const textNode = createTextNode(
       'Mixed: ?[%{{type}} option1 | option2｜option3]'
     );
@@ -123,7 +106,9 @@ describe('remarkCustomVariable', () => {
 
     const props = customVariables[0].data.hProperties;
     expect(props.variableName).toBe('type');
-    expect(props.buttonTexts).toEqual(['option1', 'option2', 'option3']);
+    // Only half-width pipe | is valid, so option2｜option3 is treated as one button
+    expect(props.buttonTexts).toEqual(['option1', 'option2｜option3']);
+    expect(props.buttonValues).toEqual(['option1', 'option2｜option3']);
   });
 
   test('should handle whitespace correctly', () => {

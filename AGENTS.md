@@ -82,9 +82,11 @@ tests/                         # Comprehensive test suite
 - **Button syntax**: `?[Button Text]` → interactive button data
 - **Variable inputs**: `?[%{{name}} options]` → form field data
 - **Custom values**: `?[Display//value]` → separate display/value pairs
+- **Single-select**: `?[Yes | No | Maybe]` → single choice button options
+- **Multi-select**: `?[React||Vue||Angular]` → multiple choice button options
 - **Unicode support**: Works with Chinese and other languages
-- **Multiple choice**: `?[Yes | No | Maybe]` → multiple button options
 - **Combined syntax**: Variables with button options and text input
+- **Separator priority**: First separator type determines parsing mode
 
 ## Architecture
 
@@ -220,27 +222,39 @@ describe('syntax pattern group', () => {
 const TEST_CASES = {
   // Basic functionality
   simple: '?[Submit]',
-  multiple: '?[Yes | No | Cancel]',
+  singleSelect: '?[Yes | No | Cancel]',
+  multiSelect: '?[JavaScript||TypeScript||Python]',
   customValues: '?[Save Changes//save | Discard//discard]',
+  multiCustomValues: '?[Frontend//fe||Backend//be||Fullstack//fs]',
 
   // Variable assignments
   textInput: '?[%{{username}}...Enter your name]',
-  buttonSelect: '?[%{{theme}} Light | Dark]',
-  combined: '?[%{{size}} Small//S | Medium//M | ...custom]',
+  singleButtonSelect: '?[%{{theme}} Light | Dark]',
+  multiButtonSelect: '?[%{{skills}} React||Vue||Angular]',
+  singleCombined: '?[%{{size}} Small//S | Medium//M | ...custom]',
+  multiCombined: '?[%{{tags}} React||Vue||Angular||...Other framework]',
 
   // Unicode and i18n
   chinese: '?[%{{用户名}}...请输入姓名]',
+  chineseMulti: '?[%{{技能}} 前端||后端||全栈]',
   emoji: '?[👍 Good | 👎 Bad | 🤔 Unsure]',
+  emojiMulti: '?[😊 Happy||😢 Sad||😡 Angry]',
   mixed: '?[%{{语言}} English//en | 中文//zh | 日本语//ja]',
+
+  // Separator priority tests
+  singleFirst: '?[%{{opt}} A | B||C]', // Single-select: ["A", "B||C"]
+  multiFirst: '?[%{{opt}} A||B | C]', // Multi-select: ["A", "B | C"]
 
   // Edge cases
   empty: '?[]',
   whitespace: '?[   ]',
   malformed: '?[incomplete',
   nested: '?[Button [with brackets]]',
+  emptyMulti: '?[%{{empty}} ||]',
 
   // Performance test data
-  large: '?[' + 'Option|'.repeat(1000) + 'Final]',
+  largeSingle: '?[' + 'Option|'.repeat(1000) + 'Final]',
+  largeMulti: '?[%{{many}} ' + 'Option||'.repeat(100) + 'Final]',
 };
 ```
 
@@ -308,28 +322,52 @@ This project implements a **layered parsing architecture** with strict syntax ru
    ?[%{{comment}}...] # Empty prompt
    ```
 
-4. **Variable Button Selection**
+4. **Variable Button Selection (Single-Select)**
 
    ```markdown
-   ?[%{{theme}} Light | Dark] # Button selection
+   ?[%{{theme}} Light | Dark] # Single-select button group
    ?[%{{size}} S//Small | M//Medium | L//Large] # With custom values
    ```
 
-5. **Combined: Buttons + Text Input**
+5. **Variable Button Selection (Multi-Select)**
 
    ```markdown
-   ?[%{{size}} Small//S | Medium//M | Large//L | ...custom size]
+   ?[%{{skills}} JavaScript||TypeScript||Python] # Multi-select button group
+   ?[%{{lang}} JS//JavaScript||TS//TypeScript||PY//Python] # With custom values
    ```
 
-   - Buttons: Small(S), Medium(M), Large(L)
-   - Text input: "custom size" placeholder
+6. **Combined: Buttons + Text Input**
+
+   ```markdown
+   # Single-select with text input
+
+   ?[%{{size}} Small//S | Medium//M | Large//L | ...custom size]
+
+   # Multi-select with text input
+
+   ?[%{{tags}} React||Vue||Angular||...Other framework]
+   ```
+
+   - Single-select: Small(S), Medium(M), Large(L) + text input
+   - Multi-select: React, Vue, Angular + text input
 
 #### Parsing Rules and Constraints
 
-1. **Separator Characters**
-   - Pipe: `|` (standard)
-   - Full-width pipe: `｜` (Chinese input support)
+1. **Separator Characters and Priority Logic**
+   - Single pipe: `|` (single-select mode)
+   - Double pipe: `||` (multi-select mode)
    - Ellipsis: `...` (separates buttons from text input)
+
+   **Separator Priority Rules**:
+   - If first separator is `|`: Parse as single-select, `||` becomes part of values
+   - If first separator is `||`: Parse as multi-select, single `|` becomes part of values
+
+   **Examples**:
+
+   ```markdown
+   ?[%{{opt}} A | B||C] # Single-select: ["A", "B||C"]
+   ?[%{{opt}} A||B | C] # Multi-select: ["A", "B | C"]
+   ```
 
 2. **Button Value Format**
    - Pattern: `Display Text//actual_value`
@@ -379,6 +417,7 @@ interface CustomVariableNode extends Node {
     buttonTexts?: string[]; // Button display text
     buttonValues?: string[]; // Button values (may differ from display)
     placeholder?: string; // Text input placeholder
+    isMultiSelect?: boolean; // Whether it's multi-select mode (for || separators)
   };
 }
 ```
@@ -389,10 +428,12 @@ The interaction parser handles these syntax patterns:
 
 1. **Simple buttons**: `?[Button Text]`
 2. **Custom values**: `?[Display Text//actual-value]`
-3. **Multiple choice**: `?[Option1 | Option2 | Option3]`
-4. **Variables**: `?[%{{variableName}} options...]`
-5. **Text input**: `?[%{{name}} ...placeholder text]`
-6. **Combined**: `?[%{{name}} Button1//val1 | Button2//val2 | ...placeholder]`
+3. **Single-select choice**: `?[Option1 | Option2 | Option3]`
+4. **Multi-select choice**: `?[Option1||Option2||Option3]`
+5. **Variables**: `?[%{{variableName}} options...]`
+6. **Text input**: `?[%{{name}} ...placeholder text]`
+7. **Single-select combined**: `?[%{{name}} Button1//val1 | Button2//val2 | ...placeholder]`
+8. **Multi-select combined**: `?[%{{name}} Button1//val1||Button2//val2||...placeholder]`
 
 ### Error Handling Standards (CRITICAL)
 

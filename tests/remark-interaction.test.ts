@@ -1,35 +1,12 @@
 import remarkInteraction from '../src/remark-interaction';
-import type { Node, Parent, Literal } from 'unist';
+import type { Literal } from 'unist';
+import {
+  createTextNode,
+  createParentNode,
+  findCustomNodes,
+} from './test-utils';
 
 describe('remarkInteraction (Merged Plugin)', () => {
-  function createTextNode(value: string): Literal {
-    return { type: 'text', value };
-  }
-
-  function createParentNode(children: Node[]): Parent {
-    return { type: 'paragraph', children };
-  }
-
-  function findCustomNodes(tree: Node): any[] {
-    const customNodes: any[] = [];
-
-    function visit(node: any) {
-      if (
-        node.type === 'element' &&
-        (node.data?.hName === 'custom-button' ||
-          node.data?.hName === 'custom-variable')
-      ) {
-        customNodes.push(node);
-      }
-      if (node.children) {
-        node.children.forEach(visit);
-      }
-    }
-
-    visit(tree);
-    return customNodes;
-  }
-
   describe('Variable Syntax (custom-variable)', () => {
     test('should parse text-only input', () => {
       const textNode = createTextNode('Input: ?[%{{name}}...enter your name]');
@@ -168,6 +145,135 @@ describe('remarkInteraction (Merged Plugin)', () => {
     });
   });
 
+  describe('Multi-Select Syntax', () => {
+    test('should parse multi-select variable buttons', () => {
+      const textNode = createTextNode(
+        'Select options: ?[%{{options}} Option A||Option B||Option C]'
+      );
+      const parentNode = createParentNode([textNode]);
+
+      const plugin = remarkInteraction();
+      plugin(parentNode);
+
+      const customNodes = findCustomNodes(parentNode);
+      expect(customNodes).toHaveLength(1);
+      expect(customNodes[0].data.hName).toBe('custom-variable');
+
+      const props = customNodes[0].data.hProperties;
+      expect(props.variableName).toBe('options');
+      expect(props.buttonTexts).toEqual(['Option A', 'Option B', 'Option C']);
+      expect(props.buttonValues).toEqual(['Option A', 'Option B', 'Option C']);
+      expect(props.isMultiSelect).toBe(true);
+      expect(props.placeholder).toBeUndefined();
+    });
+
+    test('should parse multi-select with custom values', () => {
+      const textNode = createTextNode(
+        'Choose: ?[%{{features}} Feature A//feat_a||Feature B//feat_b||Feature C//feat_c]'
+      );
+      const parentNode = createParentNode([textNode]);
+
+      const plugin = remarkInteraction();
+      plugin(parentNode);
+
+      const customNodes = findCustomNodes(parentNode);
+      expect(customNodes).toHaveLength(1);
+      expect(customNodes[0].data.hName).toBe('custom-variable');
+
+      const props = customNodes[0].data.hProperties;
+      expect(props.variableName).toBe('features');
+      expect(props.buttonTexts).toEqual([
+        'Feature A',
+        'Feature B',
+        'Feature C',
+      ]);
+      expect(props.buttonValues).toEqual(['feat_a', 'feat_b', 'feat_c']);
+      expect(props.isMultiSelect).toBe(true);
+    });
+
+    test('should parse multi-select with text input', () => {
+      const textNode = createTextNode(
+        'Tags: ?[%{{tags}} JavaScript||TypeScript||Python||...Other language]'
+      );
+      const parentNode = createParentNode([textNode]);
+
+      const plugin = remarkInteraction();
+      plugin(parentNode);
+
+      const customNodes = findCustomNodes(parentNode);
+      expect(customNodes).toHaveLength(1);
+      expect(customNodes[0].data.hName).toBe('custom-variable');
+
+      const props = customNodes[0].data.hProperties;
+      expect(props.variableName).toBe('tags');
+      expect(props.buttonTexts).toEqual(['JavaScript', 'TypeScript', 'Python']);
+      expect(props.buttonValues).toEqual([
+        'JavaScript',
+        'TypeScript',
+        'Python',
+      ]);
+      expect(props.placeholder).toBe('Other language');
+      expect(props.isMultiSelect).toBe(true);
+    });
+
+    test('should distinguish single vs multi-select correctly', () => {
+      const textNode = createTextNode(
+        'Single: ?[%{{theme}} Light | Dark] Multi: ?[%{{lang}} JS||TS||PY]'
+      );
+      const parentNode = createParentNode([textNode]);
+
+      const plugin = remarkInteraction();
+      plugin(parentNode);
+
+      const customNodes = findCustomNodes(parentNode);
+      expect(customNodes).toHaveLength(2);
+
+      // Find nodes by variable name
+      const singleNode = customNodes.find(
+        node => node.data.hProperties.variableName === 'theme'
+      );
+      const multiNode = customNodes.find(
+        node => node.data.hProperties.variableName === 'lang'
+      );
+
+      expect(singleNode).toBeDefined();
+      expect(singleNode.data.hProperties.isMultiSelect).toBe(false);
+      expect(singleNode.data.hProperties.buttonTexts).toEqual([
+        'Light',
+        'Dark',
+      ]);
+
+      expect(multiNode).toBeDefined();
+      expect(multiNode.data.hProperties.isMultiSelect).toBe(true);
+      expect(multiNode.data.hProperties.buttonTexts).toEqual([
+        'JS',
+        'TS',
+        'PY',
+      ]);
+    });
+
+    test('should handle Chinese multi-select', () => {
+      const textNode = createTextNode(
+        '选择: ?[%{{技能}} 前端||后端||全栈||...其他技能]'
+      );
+      const parentNode = createParentNode([textNode]);
+
+      const plugin = remarkInteraction();
+      plugin(parentNode);
+
+      const customNodes = findCustomNodes(parentNode);
+      expect(customNodes).toHaveLength(1);
+      expect(customNodes[0].data.hName).toBe('custom-variable');
+
+      const props = customNodes[0].data.hProperties;
+      expect(props.variableName).toBe('技能');
+      expect(props.buttonTexts).toEqual(['前端', '后端', '全栈']);
+      expect(props.buttonValues).toEqual(['前端', '后端', '全栈']);
+      expect(props.placeholder).toBe('其他技能');
+      expect(props.isMultiSelect).toBe(true);
+    });
+  });
+
   describe('Mixed Content', () => {
     test('should process variable first, then button in different text nodes', () => {
       const textNode1 = createTextNode('Variable: ?[%{{action}} save]');
@@ -216,7 +322,7 @@ describe('remarkInteraction (Merged Plugin)', () => {
       expect(props.buttonValues).toEqual(['']);
     });
 
-    test('should handle Chinese separators', () => {
+    test('should not parse Chinese full-width separators', () => {
       const textNode = createTextNode(
         'Choose: ?[%{{fruit}} Apple｜Banana｜Orange]'
       );
@@ -231,8 +337,9 @@ describe('remarkInteraction (Merged Plugin)', () => {
 
       const props = customNodes[0].data.hProperties;
       expect(props.variableName).toBe('fruit');
-      expect(props.buttonTexts).toEqual(['Apple', 'Banana', 'Orange']);
-      expect(props.buttonValues).toEqual(['Apple', 'Banana', 'Orange']);
+      // Should treat the entire content as a single button since ｜ is not a valid separator
+      expect(props.buttonTexts).toEqual(['Apple｜Banana｜Orange']);
+      expect(props.buttonValues).toEqual(['Apple｜Banana｜Orange']);
     });
 
     test('should not modify text without interaction syntax', () => {
