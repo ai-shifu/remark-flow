@@ -72,6 +72,7 @@
     "commit": "cz",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "interactive-test": "node scripts/interactive-test.js",
     "lint": "eslint --max-warnings 10",
     "lint-staged": "lint-staged",
     "lint:fix": "eslint --fix --max-warnings 10",

@@ -22,9 +22,9 @@ export const COMPILED_REGEXES = {
   // Layer 1: Basic format validation - matches ?[content] but excludes ?[text](url) format
   LAYER1_INTERACTION: /\?\[([^\]]*)\](?!\()/,
 
-  // Layer 2: Variable detection - matches %{{variable}}content format (supports letters, numbers, underscores, Chinese characters, with optional spaces)
+  // Layer 2: Variable detection - matches %{{variable}}content format (supports letters, numbers, underscores, spaces, Chinese characters)
   LAYER2_VARIABLE:
-    /^%\{\{\s*([a-zA-Z_\u4e00-\u9fa5][a-zA-Z0-9_\u4e00-\u9fa5]*)\s*\}\}(.*)$/,
+    /^%\{\{\s*([a-zA-Z_\u4e00-\u9fa5][a-zA-Z0-9_\u4e00-\u9fa5\s]*?)\s*\}\}(.*)$/,
 
   // Layer 3: Split content before and after ...
   LAYER3_ELLIPSIS: /^(.*?)\.\.\.(.*)/,
