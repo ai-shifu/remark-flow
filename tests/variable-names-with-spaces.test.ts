@@ -13,7 +13,10 @@ describe('Variable names strict validation (NO spaces allowed)', () => {
     // Should be treated as non-assignment button since %{{User Name}} is invalid
     expect(result.type).toBe('non_assignment_button');
     expect((result as any).buttons).toEqual([
-      { display: '%{{User Name}}...Enter your name', value: '%{{User Name}}...Enter your name' },
+      {
+        display: '%{{User Name}}...Enter your name',
+        value: '%{{User Name}}...Enter your name',
+      },
     ]);
   });
 
@@ -23,7 +26,10 @@ describe('Variable names strict validation (NO spaces allowed)', () => {
     // Should be treated as non-assignment button
     expect(result.type).toBe('non_assignment_button');
     expect((result as any).buttons).toEqual([
-      { display: '%{{ username }}...Enter name', value: '%{{ username }}...Enter name' },
+      {
+        display: '%{{ username }}...Enter name',
+        value: '%{{ username }}...Enter name',
+      },
     ]);
   });
 
@@ -81,7 +87,10 @@ describe('Variable names strict validation (NO spaces allowed)', () => {
     // Should be treated as non-assignment button
     expect(result.type).toBe('non_assignment_button');
     expect((result as any).buttons).toEqual([
-      { display: '%{{用户 偏好}}...请选择偏好', value: '%{{用户 偏好}}...请选择偏好' },
+      {
+        display: '%{{用户 偏好}}...请选择偏好',
+        value: '%{{用户 偏好}}...请选择偏好',
+      },
     ]);
   });
 
@@ -99,7 +108,10 @@ describe('Variable names strict validation (NO spaces allowed)', () => {
     // Should be treated as non-assignment button
     expect(result.type).toBe('non_assignment_button');
     expect((result as any).buttons).toEqual([
-      { display: '%{{user-name}}...Enter name', value: '%{{user-name}}...Enter name' },
+      {
+        display: '%{{user-name}}...Enter name',
+        value: '%{{user-name}}...Enter name',
+      },
     ]);
   });
 
@@ -114,7 +126,9 @@ describe('Variable names strict validation (NO spaces allowed)', () => {
   });
 
   test('should work correctly with parseToRemarkFormat for valid names', () => {
-    const result = parser.parseToRemarkFormat('?[%{{userPreference}} Option A | Option B]');
+    const result = parser.parseToRemarkFormat(
+      '?[%{{userPreference}} Option A | Option B]'
+    );
 
     expect(result.variableName).toBe('userPreference');
     expect(result.buttonTexts).toEqual(['Option A', 'Option B']);
@@ -123,11 +137,19 @@ describe('Variable names strict validation (NO spaces allowed)', () => {
   });
 
   test('should fallback correctly with parseToRemarkFormat for invalid names', () => {
-    const result = parser.parseToRemarkFormat('?[%{{User Preference}} Option A | Option B]');
+    const result = parser.parseToRemarkFormat(
+      '?[%{{User Preference}} Option A | Option B]'
+    );
 
     // Should not have variableName since variable name is invalid
     expect(result.variableName).toBeUndefined();
-    expect(result.buttonTexts).toEqual(['%{{User Preference}} Option A', 'Option B']);
-    expect(result.buttonValues).toEqual(['%{{User Preference}} Option A', 'Option B']);
+    expect(result.buttonTexts).toEqual([
+      '%{{User Preference}} Option A',
+      'Option B',
+    ]);
+    expect(result.buttonValues).toEqual([
+      '%{{User Preference}} Option A',
+      'Option B',
+    ]);
   });
 });

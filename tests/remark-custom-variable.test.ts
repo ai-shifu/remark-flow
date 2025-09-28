@@ -126,7 +126,11 @@ describe('remarkCustomVariable', () => {
     const props = customVariables[0].data.hProperties;
     // Should not have variableName since spaces in braces are invalid
     expect(props.variableName).toBeUndefined();
-    expect(props.buttonTexts).toEqual(['%{{  var  }} button1', 'button2', '...  placeholder']);
+    expect(props.buttonTexts).toEqual([
+      '%{{  var  }} button1',
+      'button2',
+      '...  placeholder',
+    ]);
     expect(props.placeholder).toBeUndefined();
   });
 
