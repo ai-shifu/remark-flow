@@ -92,22 +92,22 @@ describe('Chinese Variable Names Support', () => {
     expect(props.buttonValues).toEqual(['yes', 'no']);
   });
 
-  test('should follow JavaScript identifier rules - cannot start with number', () => {
-    const textNode = createTextNode('Invalid: ?[%{{1变量}} option]');
+  test('should allow variable names that start with numbers', () => {
+    const textNode = createTextNode('Valid: ?[%{{1变量}} option]');
     const parentNode = createParentNode([textNode]);
 
     const plugin = remarkInteraction();
     plugin(parentNode);
 
     const customNodes = findCustomNodes(parentNode);
-    // Should be treated as regular button since variable name is invalid
+    // Should be treated as valid variable since numbers at start are allowed
     expect(customNodes).toHaveLength(1);
     expect(customNodes[0].data.hName).toBe('custom-variable');
 
     const props = customNodes[0].data.hProperties;
-    expect(props.variableName).toBeUndefined();
-    expect(props.buttonTexts).toEqual(['%{{1变量}} option']);
-    expect(props.buttonValues).toEqual(['%{{1变量}} option']);
+    expect(props.variableName).toBe('1变量');
+    expect(props.buttonTexts).toEqual(['option']);
+    expect(props.buttonValues).toEqual(['option']);
   });
 
   test('should handle empty variable name', () => {

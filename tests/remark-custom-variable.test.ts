@@ -111,7 +111,7 @@ describe('remarkCustomVariable', () => {
     expect(props.buttonValues).toEqual(['option1', 'option2｜option3']);
   });
 
-  test('should handle whitespace correctly', () => {
+  test('should NOT handle spaces between braces - treat as non-assignment button', () => {
     const textNode = createTextNode(
       'Spaced: ?[%{{  var  }} button1  |  button2  |  ...  placeholder  ]'
     );
@@ -124,9 +124,14 @@ describe('remarkCustomVariable', () => {
     expect(customVariables).toHaveLength(1);
 
     const props = customVariables[0].data.hProperties;
-    expect(props.variableName).toBe('var');
-    expect(props.buttonTexts).toEqual(['button1', 'button2']);
-    expect(props.placeholder).toBe('placeholder');
+    // Should not have variableName since spaces in braces are invalid
+    expect(props.variableName).toBeUndefined();
+    expect(props.buttonTexts).toEqual([
+      '%{{  var  }} button1',
+      'button2',
+      '...  placeholder',
+    ]);
+    expect(props.placeholder).toBeUndefined();
   });
 
   test('should not match invalid syntax', () => {
