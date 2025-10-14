@@ -66,7 +66,7 @@ export default function remarkInteraction() {
 
           try {
             const parsedResult = parser.parseToRemarkFormat(fullMatch);
-
+            console.log('parsedResult', parsedResult);
             // Create AST segments
             const segments = createSegments(
               value,
