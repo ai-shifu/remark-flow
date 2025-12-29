@@ -32,8 +32,8 @@ export const COMPILED_REGEXES = {
   // Layer 3: Split Button//value format
   LAYER3_BUTTON_VALUE: /^(.+?)\/\/(.+)$/,
 
-  // Layer 3: Split on single | but not ||
-  LAYER3_SINGLE_PIPE_SPLIT: /(?<!\|)\|(?!\|)/,
+  // Layer 3: Split on single | but not || (compat-safe, avoid lookbehind)
+  LAYER3_SINGLE_PIPE_SPLIT: /\|(?!\|)/,
 };
 
 // Button interface
@@ -364,8 +364,7 @@ export class InteractionParser {
         buttonTexts = content.split('||');
       } else {
         // Single-select mode: split on single |, but preserve ||
-        // Use pre-compiled regex from constants
-        buttonTexts = content.split(COMPILED_REGEXES.LAYER3_SINGLE_PIPE_SPLIT);
+        buttonTexts = this._splitSinglePipes(content);
       }
 
       for (const buttonText of buttonTexts) {
@@ -455,6 +454,36 @@ export class InteractionParser {
 
     // If single pipe comes first, it's single-select mode
     return ['|', false];
+  }
+
+  /**
+   * Split content by single pipes while preserving double pipes.
+   *
+   * Replaces lookbehind-based regex for Safari 15 compatibility.
+   */
+  private _splitSinglePipes(content: string): string[] {
+    const segments: string[] = [];
+    let current = '';
+
+    for (let i = 0; i < content.length; i++) {
+      const char = content[i];
+
+      if (char === '|') {
+        const prevIsPipe = i > 0 && content[i - 1] === '|';
+        const nextIsPipe = i + 1 < content.length && content[i + 1] === '|';
+
+        if (!prevIsPipe && !nextIsPipe) {
+          segments.push(current);
+          current = '';
+          continue;
+        }
+      }
+
+      current += char;
+    }
+
+    segments.push(current);
+    return segments;
   }
 
   /**
