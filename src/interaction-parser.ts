@@ -9,7 +9,7 @@
 
 // Interaction input type enumeration
 export enum InteractionType {
-  TEXT_ONLY = 'text_only', // Pure text input: ?[%{{var}}...question]
+  TEXT_ONLY = 'text_only', // Pure text input: ?[%{{var}}...question] or ?[...question]
   BUTTONS_ONLY = 'buttons_only', // Pure button group: ?[%{{var}} option1|option2]
   BUTTONS_WITH_TEXT = 'buttons_with_text', // Button group + text: ?[%{{var}} option1|option2|...question]
   BUTTONS_MULTI_SELECT = 'buttons_multi_select', // Multi-select buttons: ?[%{{var}} A||B]
@@ -56,7 +56,7 @@ export interface VariableInteractionResult extends ParseResultBase {
     | InteractionType.BUTTONS_WITH_TEXT
     | InteractionType.BUTTONS_MULTI_SELECT
     | InteractionType.BUTTONS_MULTI_WITH_TEXT;
-  variable: string;
+  variable?: string;
   buttons?: Button[];
   question?: string;
   isMultiSelect?: boolean;
@@ -166,9 +166,12 @@ export class InteractionParser {
       );
       remarkResult.buttonValues = nonAssignmentResult.buttons.map(b => b.value);
     } else if (result.type !== null) {
-      // Variable interaction
+      // Input or variable interaction
       const variableResult = result as VariableInteractionResult;
-      remarkResult.variableName = variableResult.variable;
+
+      if (variableResult.variable !== undefined) {
+        remarkResult.variableName = variableResult.variable;
+      }
 
       if (variableResult.buttons) {
         remarkResult.buttonTexts = variableResult.buttons.map(b => b.display);
@@ -316,12 +319,22 @@ export class InteractionParser {
    */
   private _layer3ParseDisplayButtons(
     content: string
-  ): NonAssignmentButtonResult {
+  ): NonAssignmentButtonResult | VariableInteractionResult {
     if (!content) {
       // Empty content: ?[]
       return {
         type: InteractionType.NON_ASSIGNMENT_BUTTON,
         buttons: [{ display: '', value: '' }],
+      };
+    }
+
+    const ellipsisMatch = COMPILED_REGEXES.LAYER3_ELLIPSIS.exec(content);
+    if (ellipsisMatch && !ellipsisMatch[1].trim()) {
+      // Pure text input without variable: ?[...question]
+      return {
+        type: InteractionType.TEXT_ONLY,
+        question: ellipsisMatch[2].trim(),
+        isMultiSelect: false,
       };
     }
 
@@ -475,7 +488,7 @@ export class InteractionParser {
  * Convenience function for parsing interaction format
  *
  * Supported formats:
- * 1. ?[%{{var}}...question] - Pure text input
+ * 1. ?[%{{var}}...question] or ?[...question] - Pure text input
  * 2. ?[%{{var}} option1|option2] - Pure button group (supports display//value format)
  * 3. ?[%{{var}} option1|option2|...question] - Button group + text input
  * 4. ?[%{{var}} option1||option2] - Multi-select button group

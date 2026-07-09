@@ -26,6 +26,25 @@ describe('remarkInteraction (Merged Plugin)', () => {
       expect(props.buttonValues).toBeUndefined();
     });
 
+    test('should parse text-only input without variable', () => {
+      const textNode = createTextNode('Input: ?[...enter your answer]');
+      const parentNode = createParentNode([textNode]);
+
+      const plugin = remarkInteraction();
+      plugin(parentNode);
+
+      const customNodes = findCustomNodes(parentNode);
+      expect(customNodes).toHaveLength(1);
+      expect(customNodes[0].data.hName).toBe('custom-variable');
+
+      const props = customNodes[0].data.hProperties;
+      expect(props.variableName).toBeUndefined();
+      expect(props.placeholder).toBe('enter your answer');
+      expect(props.isMultiSelect).toBe(false);
+      expect(props.buttonTexts).toBeUndefined();
+      expect(props.buttonValues).toBeUndefined();
+    });
+
     test('should parse buttons-only', () => {
       const textNode = createTextNode(
         'Select: ?[%{{color}} red | blue | green]'

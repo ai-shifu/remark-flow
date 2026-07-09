@@ -105,6 +105,25 @@ describe('remarkFlow', () => {
     expect(customNodes[0].data.hProperties.placeholder).toBe('enter your name');
   });
 
+  test('should handle placeholder-only syntax without variable', () => {
+    const textNode = createTextNode('Input: ?[...enter your answer]');
+    const parentNode = createParentNode([textNode]);
+
+    const plugin = remarkFlow();
+    plugin(parentNode);
+
+    const customNodes = findCustomNodes(parentNode);
+    expect(customNodes).toHaveLength(1);
+    expect(customNodes[0].data.hName).toBe('custom-variable');
+    expect(customNodes[0].data.hProperties.variableName).toBeUndefined();
+    expect(customNodes[0].data.hProperties.buttonTexts).toBeUndefined();
+    expect(customNodes[0].data.hProperties.buttonValues).toBeUndefined();
+    expect(customNodes[0].data.hProperties.placeholder).toBe(
+      'enter your answer'
+    );
+    expect(customNodes[0].data.hProperties.isMultiSelect).toBe(false);
+  });
+
   test('should handle Chinese button text with valid separators', () => {
     const textNode1 = createTextNode('变量: ?[%{{color}} 红色 | 蓝色]');
     const textNode2 = createTextNode(' 按钮: ?[提交]');

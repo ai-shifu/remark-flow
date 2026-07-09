@@ -20,6 +20,15 @@ describe('InteractionParser Sample and Test', () => {
       });
     });
 
+    test('Test Non-Variable Text Input Parsing', () => {
+      const result = parser.parseToRemarkFormat('?[...Enter your answer]');
+
+      expect(result).toEqual({
+        placeholder: 'Enter your answer',
+        isMultiSelect: false,
+      });
+    });
+
     test('Test Button Syntax Parsing', () => {
       const result = parser.parseToRemarkFormat(
         '?[Save//save | Cancel//cancel]'
@@ -68,6 +77,17 @@ describe('InteractionParser Sample and Test', () => {
           'Pause',
           'Stop',
         ]);
+      }
+    });
+
+    test('Test Non-Variable Text Input Parsing', () => {
+      const result = parser.parse('?[...Describe your goal]');
+
+      expect(result.type).toBe(InteractionType.TEXT_ONLY);
+      if (result.type === InteractionType.TEXT_ONLY) {
+        expect(result.variable).toBeUndefined();
+        expect(result.question).toBe('Describe your goal');
+        expect(result.isMultiSelect).toBe(false);
       }
     });
 
@@ -154,6 +174,11 @@ describe('InteractionParser Sample and Test', () => {
           input: '?[%{{username}}...Enter your username]',
           expected: 'TEXT_ONLY',
           description: 'Pure Text Input',
+        },
+        {
+          input: '?[...Enter your username]',
+          expected: 'TEXT_ONLY',
+          description: 'Pure Text Input Without Variable',
         },
         {
           input: '?[%{{theme}} Light | Dark]',
