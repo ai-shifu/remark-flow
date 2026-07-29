@@ -32,9 +32,6 @@ export const COMPILED_REGEXES = {
   // Layer 3: Split content before and after ...
   LAYER3_ELLIPSIS: /^(.*?)\.\.\.(.*)/,
 
-  // Layer 3: Split Button//value format
-  LAYER3_BUTTON_VALUE: /^(.+?)\/\/(.+)$/,
-
   // Layer 3: Split on single | but not ||
   LAYER3_SINGLE_PIPE_SPLIT: /(?<!\|)\|(?!\|)/,
 };
@@ -447,16 +444,17 @@ export class InteractionParser {
   private _parseSingleButton(buttonText: string): Button {
     buttonText = buttonText.trim();
 
-    // Detect Button//value format
-    const match = COMPILED_REGEXES.LAYER3_BUTTON_VALUE.exec(buttonText);
-
-    if (match) {
-      const display = match[1].trim();
-      const value = match[2].trim();
-      return { display: display, value: value };
-    } else {
-      return { display: buttonText, value: buttonText };
+    // Detect Button//value format: split at the first "//" with a non-empty
+    // display before it and a non-empty value after it. (indexOf instead of
+    // a lazy/greedy regex, whose backtracking is super-linear.)
+    const separatorIndex = buttonText.indexOf('//');
+    if (separatorIndex > 0 && separatorIndex + 2 < buttonText.length) {
+      return {
+        display: buttonText.slice(0, separatorIndex).trim(),
+        value: buttonText.slice(separatorIndex + 2).trim(),
+      };
     }
+    return { display: buttonText, value: buttonText };
   }
 
   /**

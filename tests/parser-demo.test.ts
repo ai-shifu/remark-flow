@@ -76,7 +76,7 @@ describe('InteractionParser Sample and Test', () => {
       const result = parser.parse('Invalid syntax');
 
       expect(result.error).toBeDefined();
-      expect(result.type).toBe(null);
+      expect(result.type).toBeNull();
     });
   });
 
