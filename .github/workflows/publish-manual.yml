@@ -68,12 +68,17 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
 
-      # Trusted Publishing (OIDC) requires npm >= 11.5.1; node 20 ships an older npm.
+      # Trusted Publishing (OIDC) requires npm >= 11.5.1; node 20 ships an older
+      # npm. Pinned version + --ignore-scripts: no unpinned resolution and no
+      # lifecycle scripts during install.
       - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@latest
+        run: npm install -g npm@12.0.1 --ignore-scripts
 
+      # --ignore-scripts: dependency lifecycle scripts must not run in CI.
+      # Verified locally: tests and build pass without them (husky's prepare
+      # hook is the only script and is not needed here).
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Run tests and validation
         run: |
