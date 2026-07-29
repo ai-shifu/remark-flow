@@ -23,11 +23,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Base version, e.g. 1.2.0 (no -dev suffix)"
+        description: 'Base version, e.g. 1.2.0 (no -dev suffix)'
         required: true
         type: string
       release_type:
-        description: "Package type"
+        description: 'Package type'
         required: true
         type: choice
         default: dev
@@ -64,9 +64,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          registry-url: "https://registry.npmjs.org"
-          cache: "npm"
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
 
       # Trusted Publishing (OIDC) requires npm >= 11.5.1; node 20 ships an older npm.
       - name: Upgrade npm for trusted publishing
