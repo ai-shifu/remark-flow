@@ -22,9 +22,12 @@ export const COMPILED_REGEXES = {
   // Layer 1: Basic format validation - matches ?[content] but excludes ?[text](url) format
   LAYER1_INTERACTION: /\?\[([^\]]*)\](?!\()/,
 
-  // Layer 2: Variable detection - matches %{{variable}}content format (supports letters, numbers, underscores, Chinese characters, with optional spaces)
+  // Layer 2: Variable detection - matches %{{variable}}content format
+  // (supports letters, numbers, underscores, Chinese characters, Japanese
+  // kana, with optional spaces inside the braces). Superset of both the
+  // repo history and the published 0.1.6 behavior.
   LAYER2_VARIABLE:
-    /^%\{\{\s*([a-zA-Z_\u4e00-\u9fa5][a-zA-Z0-9_\u4e00-\u9fa5]*)\s*\}\}(.*)$/,
+    /^%\{\{\s*([a-zA-Z0-9_\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]+)\s*\}\}(.*)$/,
 
   // Layer 3: Split content before and after ...
   LAYER3_ELLIPSIS: /^(.*?)\.\.\.(.*)/,
@@ -62,10 +65,14 @@ export interface VariableInteractionResult extends ParseResultBase {
   isMultiSelect?: boolean;
 }
 
-// Non-assignment button result interface
+// Non-assignment interaction result interface (no variable). Supports the
+// same shapes as variable interactions: buttons (single/multi select), text
+// input (?[...question]) and buttons + text (?[A|B|...question]).
 export interface NonAssignmentButtonResult extends ParseResultBase {
   type: InteractionType.NON_ASSIGNMENT_BUTTON;
   buttons: Button[];
+  question?: string;
+  isMultiSelect?: boolean;
 }
 
 // Error result interface
@@ -159,12 +166,22 @@ export class InteractionParser {
     const remarkResult: RemarkCompatibleResult = {};
 
     if (result.type === InteractionType.NON_ASSIGNMENT_BUTTON) {
-      // Non-assignment button
+      // Non-assignment interaction (no variableName in the output)
       const nonAssignmentResult = result as NonAssignmentButtonResult;
-      remarkResult.buttonTexts = nonAssignmentResult.buttons.map(
-        b => b.display
-      );
-      remarkResult.buttonValues = nonAssignmentResult.buttons.map(b => b.value);
+      if (nonAssignmentResult.buttons.length > 0) {
+        remarkResult.buttonTexts = nonAssignmentResult.buttons.map(
+          b => b.display
+        );
+        remarkResult.buttonValues = nonAssignmentResult.buttons.map(
+          b => b.value
+        );
+      }
+      if (nonAssignmentResult.question !== undefined) {
+        remarkResult.placeholder = nonAssignmentResult.question;
+      }
+      if (nonAssignmentResult.isMultiSelect !== undefined) {
+        remarkResult.isMultiSelect = nonAssignmentResult.isMultiSelect;
+      }
     } else if (result.type !== null) {
       // Variable interaction
       const variableResult = result as VariableInteractionResult;
@@ -325,12 +342,39 @@ export class InteractionParser {
       };
     }
 
+    // Detect if there's ... separator (mirrors the variable branch)
+    const ellipsisMatch = COMPILED_REGEXES.LAYER3_ELLIPSIS.exec(content);
+
+    if (ellipsisMatch) {
+      const beforeEllipsis = ellipsisMatch[1].trim();
+      const question = ellipsisMatch[2].trim();
+
+      if (beforeEllipsis) {
+        // Button group + text input: ?[Button1 | Button2 | ...question]
+        const [buttons, isMultiSelect] = this._parseButtons(beforeEllipsis);
+        return {
+          type: InteractionType.NON_ASSIGNMENT_BUTTON,
+          buttons: buttons,
+          question: question,
+          isMultiSelect: isMultiSelect,
+        };
+      }
+      // Pure text input: ?[...question]
+      return {
+        type: InteractionType.NON_ASSIGNMENT_BUTTON,
+        buttons: [],
+        question: question,
+        isMultiSelect: false,
+      };
+    }
+
     if (/\|/.test(content)) {
-      // Multiple buttons: ?[Continue | Cancel]
-      const [buttons] = this._parseButtons(content); // Only use buttons, ignore isMultiSelect for display buttons
+      // Button group: ?[Continue | Cancel] or ?[A || B]
+      const [buttons, isMultiSelect] = this._parseButtons(content);
       return {
         type: InteractionType.NON_ASSIGNMENT_BUTTON,
         buttons: buttons,
+        isMultiSelect: isMultiSelect,
       };
     } else {
       // Single button: ?[Continue]
@@ -338,6 +382,7 @@ export class InteractionParser {
       return {
         type: InteractionType.NON_ASSIGNMENT_BUTTON,
         buttons: [button],
+        isMultiSelect: false,
       };
     }
   }

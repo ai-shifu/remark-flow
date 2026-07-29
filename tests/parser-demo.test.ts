@@ -28,6 +28,7 @@ describe('InteractionParser Sample and Test', () => {
       expect(result).toEqual({
         buttonTexts: ['Save', 'Cancel'],
         buttonValues: ['save', 'cancel'],
+        isMultiSelect: false,
       });
     });
 

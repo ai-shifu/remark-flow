@@ -77,6 +77,16 @@ Action: ?[Save Changes//save | Cancel//cancel]
 
 **Output:** `{ buttonTexts: ["Yes", "No", "Maybe"], buttonValues: ["Yes", "No", "Maybe"], isMultiSelect: false }`
 
+Buttons without a variable also support multi-select (`||`) and the `...` text-input suffix:
+
+```markdown
+?[JavaScript||TypeScript||Python]
+?[...Anything to add?]
+?[Option A | Option B | ...Other, please specify]
+```
+
+**Output:** `{ buttonTexts: [...], buttonValues: [...], isMultiSelect: true }`, `{ placeholder: "Anything to add?" }`, and `{ buttonTexts: [...], buttonValues: [...], placeholder: "Other, please specify", isMultiSelect: false }` respectively. `variableName` stays `undefined` — the answer is not assigned to a variable and should be fed back into the conversation context by the host.
+
 ### 2. Custom Button Values
 
 ```markdown

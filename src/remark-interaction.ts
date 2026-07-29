@@ -65,6 +65,21 @@ export default function remarkInteraction() {
           const endIndex = startIndex + fullMatch.length;
 
           try {
+            // Check for invalid variable syntax (same guard as
+            // remark-custom-variable): keep the original text instead of
+            // misparsing %{variable} / %{{}} as display buttons.
+            const innerContent = match[1];
+            if (innerContent.includes('%{')) {
+              if (!innerContent.includes('%{{')) {
+                // Contains invalid variable syntax %{variable} instead of %{{variable}}
+                return;
+              }
+              // Check for empty variable name %{{}}
+              if (innerContent.includes('%{{}}')) {
+                return;
+              }
+            }
+
             const parsedResult = parser.parseToRemarkFormat(fullMatch);
 
             // Create AST segments
