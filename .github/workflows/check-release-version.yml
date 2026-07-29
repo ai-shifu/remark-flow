@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Ensure package.json version is a release version
         run: |
@@ -34,11 +36,12 @@ jobs:
             console.error("::error::No 'version' field in package.json.");
             process.exit(1);
           }
-          // semver pre-release = anything after a hyphen (e.g. 1.2.0-dev.1)
-          if (version.includes("-")) {
+          // Strict release format: X.Y.Z only. Rejects pre-release/dev builds
+          // (1.2.0-dev.1), build metadata (1.2.3+build) and malformed values.
+          if (typeof version !== "string" || !/^\d+\.\d+\.\d+$/.test(version)) {
             console.error(
-              `::error::package.json version ${version} is a pre-release/dev build and ` +
-                "cannot be merged into main. Set a release version (X.Y.Z) first — dev " +
+              `::error::package.json version ${version} is not a release version and ` +
+                "cannot be merged into main. Set a clean X.Y.Z version first — dev " +
                 "builds (X.Y.Z-dev.N) are for feature-branch testing only.",
             );
             process.exit(1);
