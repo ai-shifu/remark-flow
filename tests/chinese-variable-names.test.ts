@@ -92,25 +92,28 @@ describe('Chinese Variable Names Support', () => {
     expect(props.buttonValues).toEqual(['yes', 'no']);
   });
 
-  test('should follow JavaScript identifier rules - cannot start with number', () => {
-    const textNode = createTextNode('Invalid: ?[%{{1变量}} option]');
+  test('should allow variable names starting with a number', () => {
+    // Aligned with the published 0.1.6 behavior and the permissive Python
+    // parser: digits are allowed anywhere in the variable name.
+    const textNode = createTextNode('Valid: ?[%{{1变量}} option]');
     const parentNode = createParentNode([textNode]);
 
     const plugin = remarkInteraction();
     plugin(parentNode);
 
     const customNodes = findCustomNodes(parentNode);
-    // Should be treated as regular button since variable name is invalid
     expect(customNodes).toHaveLength(1);
     expect(customNodes[0].data.hName).toBe('custom-variable');
 
     const props = customNodes[0].data.hProperties;
-    expect(props.variableName).toBeUndefined();
-    expect(props.buttonTexts).toEqual(['%{{1变量}} option']);
-    expect(props.buttonValues).toEqual(['%{{1变量}} option']);
+    expect(props.variableName).toBe('1变量');
+    expect(props.buttonTexts).toEqual(['option']);
+    expect(props.buttonValues).toEqual(['option']);
   });
 
-  test('should handle empty variable name', () => {
+  test('should keep original text for empty variable name', () => {
+    // Same guard as remark-custom-variable: %{{}} is malformed, so the text
+    // node is preserved instead of being misparsed as display buttons.
     const textNode = createTextNode('Empty: ?[%{{}} option]');
     const parentNode = createParentNode([textNode]);
 
@@ -118,8 +121,9 @@ describe('Chinese Variable Names Support', () => {
     plugin(parentNode);
 
     const customNodes = findCustomNodes(parentNode);
-    // Should be treated as regular button since variable name is empty
-    expect(customNodes).toHaveLength(1);
-    expect(customNodes[0].data.hName).toBe('custom-variable');
+    expect(customNodes).toHaveLength(0);
+    expect((parentNode.children[0] as unknown as { value: string }).value).toBe(
+      'Empty: ?[%{{}} option]'
+    );
   });
 });
