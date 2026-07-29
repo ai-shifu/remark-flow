@@ -250,6 +250,65 @@ export class InteractionParser {
   }
 
   /**
+   * Parse the structural shape of interaction content: buttons, optional
+   * `...question` text input, multi-select flag. Shared by the variable and
+   * non-assignment branches, which only differ in how they map the shape
+   * into their result types.
+   *
+   * @param content - Content after the (optional) variable
+   * @returns The parsed content shape
+   */
+  private _parseContentShape(content: string): {
+    buttons: Button[];
+    question?: string;
+    isMultiSelect: boolean;
+    hasTextInput: boolean;
+  } {
+    const ellipsisMatch = COMPILED_REGEXES.LAYER3_ELLIPSIS.exec(content);
+
+    if (ellipsisMatch) {
+      const beforeEllipsis = ellipsisMatch[1].trim();
+      const question = ellipsisMatch[2].trim();
+
+      if (beforeEllipsis) {
+        // Button group + text input: ?[Button1 | Button2 | ...question]
+        const [buttons, isMultiSelect] = this._parseButtons(beforeEllipsis);
+        return { buttons, question, isMultiSelect, hasTextInput: true };
+      }
+      // Pure text input: ?[...question]
+      return {
+        buttons: [],
+        question,
+        isMultiSelect: false,
+        hasTextInput: true,
+      };
+    }
+
+    if (/\|/.test(content)) {
+      // Button group: ?[Button1 | Button2] or ?[Button1 || Button2]
+      const [buttons, isMultiSelect] = this._parseButtons(content);
+      return { buttons, isMultiSelect, hasTextInput: false };
+    }
+
+    if (content) {
+      // Single button: ?[Button1] or ?[Button1//id1]
+      return {
+        buttons: [this._parseSingleButton(content)],
+        isMultiSelect: false,
+        hasTextInput: false,
+      };
+    }
+
+    // Empty content: pure text input with no prompt
+    return {
+      buttons: [],
+      question: '',
+      isMultiSelect: false,
+      hasTextInput: true,
+    };
+  }
+
+  /**
    * Layer 3: Parse variable interaction (variable assignment type)
    *
    * @param variableName - Variable name
@@ -260,73 +319,44 @@ export class InteractionParser {
     variableName: string,
     content: string
   ): VariableInteractionResult {
-    // Detect if there's ... separator
-    const ellipsisMatch = COMPILED_REGEXES.LAYER3_ELLIPSIS.exec(content);
+    const shape = this._parseContentShape(content);
 
-    if (ellipsisMatch) {
-      // Has ... separator
-      const beforeEllipsis = ellipsisMatch[1].trim();
-      const question = ellipsisMatch[2].trim();
-
-      if (beforeEllipsis) {
+    if (shape.hasTextInput) {
+      if (shape.buttons.length > 0) {
         // Button group + text input: ?[%{{var}} Button1 | Button2 | ...question]
-        const [buttons, isMultiSelect] = this._parseButtons(beforeEllipsis);
-        const interactionType = isMultiSelect
-          ? InteractionType.BUTTONS_MULTI_WITH_TEXT
-          : InteractionType.BUTTONS_WITH_TEXT;
         return {
-          type: interactionType,
+          type: shape.isMultiSelect
+            ? InteractionType.BUTTONS_MULTI_WITH_TEXT
+            : InteractionType.BUTTONS_WITH_TEXT,
           variable: variableName,
-          buttons: buttons,
-          question: question,
-          isMultiSelect: isMultiSelect,
-        };
-      } else {
-        // Pure text input
-        return {
-          type: InteractionType.TEXT_ONLY,
-          variable: variableName,
-          question: question,
-          isMultiSelect: false,
+          buttons: shape.buttons,
+          question: shape.question,
+          isMultiSelect: shape.isMultiSelect,
         };
       }
-    } else {
-      // No ... separator
-      if ((/\|/.test(content) || /\|\|/.test(content)) && content) {
-        // Pure button group: ?[%{{var}} Button1 | Button2] or ?[%{{var}} Button1 || Button2]
-        const [buttons, isMultiSelect] = this._parseButtons(content);
-        const interactionType = isMultiSelect
-          ? InteractionType.BUTTONS_MULTI_SELECT
-          : InteractionType.BUTTONS_ONLY;
-        return {
-          type: interactionType,
-          variable: variableName,
-          buttons: buttons,
-          isMultiSelect: isMultiSelect,
-        };
-      } else if (content) {
-        // Single button: ?[%{{var}} Button1] or ?[%{{var}} Button1//id1]
-        const button = this._parseSingleButton(content);
-        return {
-          type: InteractionType.BUTTONS_ONLY,
-          variable: variableName,
-          buttons: [button],
-          isMultiSelect: false,
-        };
-      } else {
-        // Pure text input (no prompt): ?[%{{var}}]
-        return {
-          type: InteractionType.TEXT_ONLY,
-          variable: variableName,
-          question: '',
-          isMultiSelect: false,
-        };
-      }
+      // Pure text input: ?[%{{var}}...question] or ?[%{{var}}]
+      return {
+        type: InteractionType.TEXT_ONLY,
+        variable: variableName,
+        question: shape.question ?? '',
+        isMultiSelect: false,
+      };
     }
+
+    // Button group or single button: ?[%{{var}} Button1 | Button2]
+    return {
+      type: shape.isMultiSelect
+        ? InteractionType.BUTTONS_MULTI_SELECT
+        : InteractionType.BUTTONS_ONLY,
+      variable: variableName,
+      buttons: shape.buttons,
+      isMultiSelect: shape.isMultiSelect,
+    };
   }
 
   /**
-   * Layer 3: Parse display buttons (non-variable assignment type)
+   * Layer 3: Parse non-assignment interactions (no variable). Same shapes as
+   * the variable branch; the answer is not assigned to a variable.
    *
    * @param content - Content
    * @returns Parse result
@@ -342,49 +372,16 @@ export class InteractionParser {
       };
     }
 
-    // Detect if there's ... separator (mirrors the variable branch)
-    const ellipsisMatch = COMPILED_REGEXES.LAYER3_ELLIPSIS.exec(content);
-
-    if (ellipsisMatch) {
-      const beforeEllipsis = ellipsisMatch[1].trim();
-      const question = ellipsisMatch[2].trim();
-
-      if (beforeEllipsis) {
-        // Button group + text input: ?[Button1 | Button2 | ...question]
-        const [buttons, isMultiSelect] = this._parseButtons(beforeEllipsis);
-        return {
-          type: InteractionType.NON_ASSIGNMENT_BUTTON,
-          buttons: buttons,
-          question: question,
-          isMultiSelect: isMultiSelect,
-        };
-      }
-      // Pure text input: ?[...question]
-      return {
-        type: InteractionType.NON_ASSIGNMENT_BUTTON,
-        buttons: [],
-        question: question,
-        isMultiSelect: false,
-      };
+    const shape = this._parseContentShape(content);
+    const result: NonAssignmentButtonResult = {
+      type: InteractionType.NON_ASSIGNMENT_BUTTON,
+      buttons: shape.buttons,
+      isMultiSelect: shape.isMultiSelect,
+    };
+    if (shape.hasTextInput) {
+      result.question = shape.question;
     }
-
-    if (/\|/.test(content)) {
-      // Button group: ?[Continue | Cancel] or ?[A || B]
-      const [buttons, isMultiSelect] = this._parseButtons(content);
-      return {
-        type: InteractionType.NON_ASSIGNMENT_BUTTON,
-        buttons: buttons,
-        isMultiSelect: isMultiSelect,
-      };
-    } else {
-      // Single button: ?[Continue]
-      const button = this._parseSingleButton(content);
-      return {
-        type: InteractionType.NON_ASSIGNMENT_BUTTON,
-        buttons: [button],
-        isMultiSelect: false,
-      };
-    }
+    return result;
   }
 
   /**
