@@ -1,7 +1,19 @@
-import { InteractionParser, InteractionType } from '../src/interaction-parser';
+import {
+  COMPILED_REGEXES,
+  InteractionParser,
+  InteractionType,
+} from '../src/interaction-parser';
 
 describe('Multi-Select Functionality Tests', () => {
   let parser: InteractionParser;
+
+  test('preserves the Safari-safe exported single-pipe regex member', () => {
+    expect(COMPILED_REGEXES.LAYER3_SINGLE_PIPE_SPLIT).toBeInstanceOf(RegExp);
+    expect(COMPILED_REGEXES.LAYER3_SINGLE_PIPE_SPLIT.source).not.toContain(
+      '(?<!'
+    );
+    expect(COMPILED_REGEXES.LAYER3_SINGLE_PIPE_SPLIT.global).toBe(true);
+  });
 
   beforeEach(() => {
     parser = new InteractionParser();
@@ -120,7 +132,7 @@ describe('Multi-Select Functionality Tests', () => {
       }
 
       // Single pipe appears first - single-select mode, double pipe is part of value
-      const singleFirstResult = parser.parse('?[%{{opt}} A | B||C]');
+      const singleFirstResult = parser.parse('?[%{{opt}} A | B||C | D]');
       expect(singleFirstResult.type).toBe(InteractionType.BUTTONS_ONLY);
       if (
         'isMultiSelect' in singleFirstResult &&
@@ -130,6 +142,7 @@ describe('Multi-Select Functionality Tests', () => {
         expect(singleFirstResult.buttons!.map(b => b.display)).toEqual([
           'A',
           'B||C',
+          'D',
         ]);
       }
     });
