@@ -31,6 +31,12 @@ export const COMPILED_REGEXES = {
 
   // Layer 3: Split content before and after ...
   LAYER3_ELLIPSIS: /^(.*?)\.\.\.(.*)/,
+
+  // Kept for consumers that inspect the exported regex collection. Exact
+  // single-pipe splitting requires context that Safari-safe regexes cannot
+  // express without consuming adjacent text, so the parser uses the scanner
+  // below instead.
+  LAYER3_SINGLE_PIPE_SPLIT: /\|(?!\|)/g,
 };
 
 const splitOnSinglePipe = (content: string): string[] => {
