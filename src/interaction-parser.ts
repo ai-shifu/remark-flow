@@ -31,9 +31,29 @@ export const COMPILED_REGEXES = {
 
   // Layer 3: Split content before and after ...
   LAYER3_ELLIPSIS: /^(.*?)\.\.\.(.*)/,
+};
 
-  // Layer 3: Split on single | but not ||
-  LAYER3_SINGLE_PIPE_SPLIT: /(?<!\|)\|(?!\|)/,
+const splitOnSinglePipe = (content: string): string[] => {
+  const parts: string[] = [];
+  let segmentStart = 0;
+
+  for (let index = 0; index < content.length; index += 1) {
+    if (content[index] !== '|') {
+      continue;
+    }
+
+    const isDoublePipe =
+      content[index - 1] === '|' || content[index + 1] === '|';
+    if (isDoublePipe) {
+      continue;
+    }
+
+    parts.push(content.slice(segmentStart, index));
+    segmentStart = index + 1;
+  }
+
+  parts.push(content.slice(segmentStart));
+  return parts;
 };
 
 // Button interface
@@ -403,8 +423,7 @@ export class InteractionParser {
         buttonTexts = content.split('||');
       } else {
         // Single-select mode: split on single |, but preserve ||
-        // Use pre-compiled regex from constants
-        buttonTexts = content.split(COMPILED_REGEXES.LAYER3_SINGLE_PIPE_SPLIT);
+        buttonTexts = splitOnSinglePipe(content);
       }
 
       for (const buttonText of buttonTexts) {
