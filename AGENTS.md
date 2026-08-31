@@ -62,7 +62,42 @@ tests/                         # Comprehensive test suite
 3. **Verify TypeScript compilation**: `npm run build` (MANDATORY)
 4. **Fix linting issues**: `npm run lint:fix`
 5. **Format code**: `npm run format`
-6. **Follow Conventional Commits**: `type: description` (lowercase type, imperative mood)
+6. **Follow the git commit message requirements below**: use the required
+   subject, body, and classification rules.
+
+### Git Commit Message Requirements
+
+All git commit message requirements live in this section. Other guidance may
+point here, but must not duplicate or redefine the policy.
+
+- Human-authored and coding-agent-authored commit messages must follow the
+  policy below.
+- The local Commitizen hook is only a baseline Conventional Commits syntax
+  check. It does not enforce the `Changed:` / `Benefit:` body or the
+  classification rules below.
+- Subject: use English Conventional Commits without scope parentheses, such as
+  `type: summary`; do not use `type(scope): summary`. Write the summary in
+  plain language that product users can understand. When a change affects
+  users, describe the user-visible outcome or benefit instead of only naming
+  the internal implementation detail.
+- Body: include exactly two sections, `Changed:` and `Benefit:`.
+- Classification: use `chore` for repository-maintenance-only instructions or
+  guidance updates like this file.
+- Parser behavior and user-visible rendering changes affect product behavior:
+  use `feat` when adding capability and `fix` when correcting behavior; do not
+  use `docs`.
+
+Example:
+
+```text
+chore: make commit titles clear to product users
+
+Changed:
+Added one canonical commit message policy to the root AGENTS.md file.
+
+Benefit:
+Contributors can understand each change and its value from the git history.
+```
 
 ### Common Pitfalls to Avoid
 
