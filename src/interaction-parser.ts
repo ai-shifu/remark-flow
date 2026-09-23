@@ -7,6 +7,15 @@
  * Layer 3: Specific content parsing
  */
 
+import {
+  findUnescaped,
+  INTERACTION_CONTENT_SOURCE,
+  splitOnEllipsis,
+  splitOnSingleUnescapedPipe,
+  splitUnescaped,
+  unescapeInteractionText,
+} from './escaping';
+
 // Interaction input type enumeration
 export enum InteractionType {
   TEXT_ONLY = 'text_only', // Pure text input: ?[%{{var}}...question]
@@ -19,8 +28,12 @@ export enum InteractionType {
 
 // Pre-compiled regex constants
 export const COMPILED_REGEXES = {
-  // Layer 1: Basic format validation - matches ?[content] but excludes ?[text](url) format
-  LAYER1_INTERACTION: /\?\[([^\]]*)\](?!\()/,
+  // Layer 1: Basic format validation - matches ?[content] but excludes ?[text](url) format.
+  // The content accepts an escaped delimiter as one unit, so a `\]` inside an option does not
+  // end the interaction. See ./escaping.
+  LAYER1_INTERACTION: new RegExp(
+    `\\?\\[(${INTERACTION_CONTENT_SOURCE})\\](?!\\()`
+  ),
 
   // Layer 2: Variable detection - matches %{{variable}}content format
   // (supports letters, numbers, underscores, Chinese characters, Japanese
@@ -34,32 +47,9 @@ export const COMPILED_REGEXES = {
 
   // Kept for consumers that inspect the exported regex collection. Exact
   // single-pipe splitting requires context that Safari-safe regexes cannot
-  // express without consuming adjacent text, so the parser uses the scanner
-  // below instead.
+  // express without consuming adjacent text, and now also has to skip a bar
+  // an option escaped, so the parser uses the scanner in ./escaping instead.
   LAYER3_SINGLE_PIPE_SPLIT: /\|(?!\|)/g,
-};
-
-const splitOnSinglePipe = (content: string): string[] => {
-  const parts: string[] = [];
-  let segmentStart = 0;
-
-  for (let index = 0; index < content.length; index += 1) {
-    if (content[index] !== '|') {
-      continue;
-    }
-
-    const isDoublePipe =
-      content[index - 1] === '|' || content[index + 1] === '|';
-    if (isDoublePipe) {
-      continue;
-    }
-
-    parts.push(content.slice(segmentStart, index));
-    segmentStart = index + 1;
-  }
-
-  parts.push(content.slice(segmentStart));
-  return parts;
 };
 
 // Button interface
@@ -287,11 +277,11 @@ export class InteractionParser {
     isMultiSelect: boolean;
     hasTextInput: boolean;
   } {
-    const ellipsisMatch = COMPILED_REGEXES.LAYER3_ELLIPSIS.exec(content);
+    const ellipsis = splitOnEllipsis(content);
 
-    if (ellipsisMatch) {
-      const beforeEllipsis = ellipsisMatch[1].trim();
-      const question = ellipsisMatch[2].trim();
+    if (ellipsis) {
+      const beforeEllipsis = ellipsis[0].trim();
+      const question = unescapeInteractionText(ellipsis[1]).trim();
 
       if (beforeEllipsis) {
         // Button group + text input: ?[Button1 | Button2 | ...question]
@@ -307,7 +297,7 @@ export class InteractionParser {
       };
     }
 
-    if (/\|/.test(content)) {
+    if (findUnescaped(content, '|') >= 0) {
       // Button group: ?[Button1 | Button2] or ?[Button1 || Button2]
       const [buttons, isMultiSelect] = this._parseButtons(content);
       return { buttons, isMultiSelect, hasTextInput: false };
@@ -426,10 +416,10 @@ export class InteractionParser {
       let buttonTexts: string[];
       if (isMultiSelect) {
         // Multi-select mode: split on ||, preserve single |
-        buttonTexts = content.split('||');
+        buttonTexts = splitUnescaped(content, '||');
       } else {
         // Single-select mode: split on single |, but preserve ||
-        buttonTexts = splitOnSinglePipe(content);
+        buttonTexts = splitOnSingleUnescapedPipe(content);
       }
 
       for (const buttonText of buttonTexts) {
@@ -441,7 +431,8 @@ export class InteractionParser {
       }
     } catch {
       // Fallback to treating entire content as single button
-      return [[{ display: content.trim(), value: content.trim() }], false];
+      const whole = unescapeInteractionText(content).trim();
+      return [[{ display: whole, value: whole }], false];
     }
 
     // For empty content (like just separators), return empty list
@@ -454,7 +445,8 @@ export class InteractionParser {
 
     // Ensure at least one button exists (but only if there's actual content)
     if (!buttons.length && content.trim()) {
-      buttons.push({ display: content.trim(), value: content.trim() });
+      const whole = unescapeInteractionText(content).trim();
+      buttons.push({ display: whole, value: whole });
     }
 
     return [buttons, isMultiSelect];
@@ -472,14 +464,19 @@ export class InteractionParser {
     // Detect Button//value format: split at the first "//" with a non-empty
     // display before it and a non-empty value after it. (indexOf instead of
     // a lazy/greedy regex, whose backtracking is super-linear.)
-    const separatorIndex = buttonText.indexOf('//');
+    const separatorIndex = findUnescaped(buttonText, '//');
     if (separatorIndex > 0 && separatorIndex + 2 < buttonText.length) {
       return {
-        display: buttonText.slice(0, separatorIndex).trim(),
-        value: buttonText.slice(separatorIndex + 2).trim(),
+        display: unescapeInteractionText(
+          buttonText.slice(0, separatorIndex)
+        ).trim(),
+        value: unescapeInteractionText(
+          buttonText.slice(separatorIndex + 2)
+        ).trim(),
       };
     }
-    return { display: buttonText, value: buttonText };
+    const resolved = unescapeInteractionText(buttonText);
+    return { display: resolved, value: resolved };
   }
 
   /**
@@ -497,9 +494,10 @@ export class InteractionParser {
       return ['|', false];
     }
 
-    // Find the position of first single pipe and first double pipe
-    const singlePipePos = content.indexOf('|');
-    const doublePipePos = content.indexOf('||');
+    // Find the position of first single pipe and first double pipe.
+    // A bar an option escaped is not a separator.
+    const singlePipePos = findUnescaped(content, '|');
+    const doublePipePos = findUnescaped(content, '||');
 
     // If no pipes found
     if (singlePipePos === -1) {

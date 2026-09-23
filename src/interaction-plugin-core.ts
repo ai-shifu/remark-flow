@@ -4,6 +4,7 @@ import {
   InteractionParser,
   type RemarkCompatibleResult,
 } from './interaction-parser';
+import { INTERACTION_CONTENT_SOURCE } from './escaping';
 
 interface InteractionElementNode extends Node {
   data: {
@@ -66,7 +67,9 @@ export function transformInteractionsInTree(
       const value = node.value as string;
 
       // Check if contains interaction syntax
-      const interactionRegex = /\?\[([^\]]*)\](?!\()/;
+      const interactionRegex = new RegExp(
+        `\\?\\[(${INTERACTION_CONTENT_SOURCE})\\](?!\\()`
+      );
       const match = interactionRegex.exec(value);
 
       if (match) {
