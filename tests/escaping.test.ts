@@ -20,6 +20,11 @@ import {
   unescapeInteractionText,
 } from '../src/escaping';
 import { COMPILED_REGEXES, InteractionParser } from '../src/interaction-parser';
+import {
+  escapeInteractionText as pkgEscape,
+  INTERACTION_CONTENT_SOURCE as PKG_CONTENT_SOURCE,
+  unescapeInteractionText as pkgUnescape,
+} from '../src/index';
 
 describe('the escape rule', () => {
   test.each([
@@ -177,5 +182,19 @@ describe('through the parser', () => {
     };
     expect(parsed.buttons[0].display).toBe('https://a.com');
     expect(parsed.buttons[0].value).toBe('https://a.com');
+  });
+});
+
+describe('the package surface', () => {
+  test('the escape rule is exported, so no one writes a second copy of it', () => {
+    // markdown-flow-ui scans for `?[...]` in its editor highlighting and its shortcode reader.
+    // Both need this exact definition of where an interaction ends; a private copy would be
+    // fooled by an escaped bracket.
+    expect(typeof pkgEscape).toBe('function');
+    expect(typeof pkgUnescape).toBe('function');
+    expect(typeof PKG_CONTENT_SOURCE).toBe('string');
+    expect(
+      new RegExp(`\\?\\[(${PKG_CONTENT_SOURCE})\\]`).exec('?[a\\]b]')?.[1]
+    ).toBe('a\\]b');
   });
 });
