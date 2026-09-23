@@ -34,11 +34,32 @@ describe('the escape rule', () => {
     'array[0]',
     'wait... ok',
     'all of them: | // ... ]',
+    '....four dots',
+    '..two dots',
+    'U.S.A.',
     '',
     'plain',
   ])('escaping then unescaping returns the same text: %s', text => {
     expect(unescapeInteractionText(escapeInteractionText(text))).toBe(text);
   });
+
+  test.each(['Yes, I agree.', 'U.S.A.', '..two dots', '1.5 metres', 'end.'])(
+    'a period that cannot become an ellipsis is left alone: %s',
+    text => {
+      // Escaping every dot puts a backslash in most sentences, in everything that stores the
+      // raw interaction. Only a run of three or more is a delimiter.
+      expect(escapeInteractionText(text)).toBe(text);
+    }
+  );
+
+  test.each(['wait... ok', '....four', 'a.....b'])(
+    'a run that could be an ellipsis is escaped whole: %s',
+    text => {
+      const escaped = escapeInteractionText(text);
+      expect(findUnescaped(escaped, '...')).toBe(-1);
+      expect(unescapeInteractionText(escaped)).toBe(text);
+    }
+  );
 
   test.each([
     '$\\pi_\\theta$',

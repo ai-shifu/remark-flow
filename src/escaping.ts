@@ -35,16 +35,37 @@ export const isEscape = (text: string, index: number): boolean =>
 /**
  * Make `text` safe to write inside `?[...]`, keeping every character it has.
  *
- * Escaping each delimiter rather than the backslashes as well is what keeps existing content
+ * A dot is escaped only inside a run of three or more, because only `...` is a delimiter and a
+ * single period ends most sentences: escaping every one turns `Yes, I agree.` into
+ * `Yes, I agree\.` in everything that stores or shows the raw interaction. Two dots cannot become
+ * three on their own, and the run is escaped whole so it cannot be read as one.
+ *
+ * Bars, brackets and slashes are escaped wherever they appear. They are rare in option text, and
+ * escaping them unconditionally removes the need to reason about what a neighbouring character
+ * might combine with once the option is written next to a separator.
+ *
+ * Escaping the delimiters rather than the backslashes as well is what keeps existing content
  * readable: a script that writes `$\pi$` in an option still writes `$\pi$` afterwards.
  */
 export const escapeInteractionText = (text: string): string => {
   let out = '';
-  for (const char of text) {
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === '.') {
+      let run = 0;
+      while (text[index + run] === '.') {
+        run += 1;
+      }
+      out += run >= 3 ? '\\.'.repeat(run) : '.'.repeat(run);
+      index += run;
+      continue;
+    }
     if (ESCAPABLE.includes(char)) {
       out += '\\';
     }
     out += char;
+    index += 1;
   }
   return out;
 };
