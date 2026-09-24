@@ -5,6 +5,7 @@ import {
   type RemarkCompatibleResult,
 } from './interaction-parser';
 import { INTERACTION_CONTENT_SOURCE } from './escaping';
+import { TOKENIZED_INTERACTION } from './interaction-syntax';
 
 interface InteractionElementNode extends Node {
   data: {
@@ -50,10 +51,15 @@ function createSegments(
  *
  * @param tree - The AST to transform in place
  * @param warnLabel - Label used in the console warning on parse failures
+ * @param tokenized - Whether the tree was parsed with the interaction tokenizer. If so, only the
+ *   text nodes it produced hold interactions: any other `?[` in a text node is one Markdown has
+ *   already rewritten -- `\?[` with its escape consumed -- and reading it as a question would turn
+ *   text the author escaped into buttons.
  */
 export function transformInteractionsInTree(
   tree: Node,
-  warnLabel: string
+  warnLabel: string,
+  tokenized = false
 ): void {
   const parser = new InteractionParser();
 
@@ -63,6 +69,8 @@ export function transformInteractionsInTree(
     (node: Literal, index: number | null, parent: Parent | null) => {
       // Input validation
       if (index === null || parent === null) return;
+      const marks = node.data as Record<string, unknown> | undefined;
+      if (tokenized && !marks?.[TOKENIZED_INTERACTION]) return;
 
       const value = node.value as string;
 

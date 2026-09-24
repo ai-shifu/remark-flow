@@ -46,3 +46,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # The built package through the Markdown pipeline a browser renders it with. The jest suite
+      # cannot load remark (ESM-only), and hand-built trees never showed what Markdown does to an
+      # interaction before the plugin runs.
+      - name: Rendering pipeline tests
+        run: node --test tests/pipeline/rendering-pipeline.test.mjs

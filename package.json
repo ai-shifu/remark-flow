@@ -28,6 +28,9 @@
     "markdownlint-cli": "^0.45.0",
     "prettier": "^3.6.2",
     "remark": "^15.0.0",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
     "remark-parse": "^11.0.0",
     "standard-version": "^9.5.0",
     "ts-jest": "^29.0.0",
@@ -81,8 +84,9 @@
     "prepublishOnly": "npm run build",
     "test": "jest",
     "test:coverage": "jest --coverage",
+    "test:pipeline": "npm run build && node --test tests/pipeline/rendering-pipeline.test.mjs",
     "test:watch": "jest --watch"
   },
   "types": "dist/index.d.ts",
-  "version": "1.3.2"
+  "version": "1.3.3"
 }
