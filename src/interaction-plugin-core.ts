@@ -5,7 +5,7 @@ import {
   type RemarkCompatibleResult,
 } from './interaction-parser';
 import { INTERACTION_CONTENT_SOURCE } from './escaping';
-import { TOKENIZED_INTERACTION, TOKENIZED_TREE } from './interaction-syntax';
+import { INTERACTION_NODE, TOKENIZED_TREE } from './interaction-syntax';
 
 interface InteractionElementNode extends Node {
   data: {
@@ -44,27 +44,80 @@ function createSegments(
 }
 
 /**
+ * Parse `value` as one whole interaction, or return null if it should stay text.
+ *
+ * Invalid variable syntax is kept as text rather than misparsed: `%{variable}` with one brace,
+ * or `%{{}}` with no name, would otherwise become display buttons.
+ */
+function parseWhole(
+  value: string,
+  parser: InteractionParser,
+  warnLabel: string
+): RemarkCompatibleResult | null {
+  const whole = new RegExp(`^\\?\\[(${INTERACTION_CONTENT_SOURCE})\\]$`).exec(
+    value
+  );
+  if (!whole) return null;
+  const innerContent = whole[1];
+  if (
+    innerContent.includes('%{') &&
+    (!innerContent.includes('%{{') || innerContent.includes('%{{}}'))
+  ) {
+    return null;
+  }
+  try {
+    return parser.parseToRemarkFormat(value);
+  } catch (error) {
+    console.warn(`Failed to parse ${warnLabel} syntax:`, error);
+    return null;
+  }
+}
+
+/**
  * Shared visitor body for the remark plugins: find `?[...]` interaction
- * syntax in text nodes and replace it with a `custom-variable` element.
+ * syntax and replace it with a `custom-variable` element.
  * remark-interaction and remark-custom-variable are thin wrappers around
  * this (they only differ in the warning label used on parse failures).
  *
  * @param tree - The AST to transform in place
  * @param warnLabel - Label used in the console warning on parse failures
  *
- * A tree parsed with the interaction tokenizer is marked so at its root. In such a tree only the
- * text nodes the tokenizer produced hold interactions: any other `?[` in a text node is one
- * Markdown has already rewritten -- `\?[` with its escape consumed -- and reading it as a
- * question would turn text the author escaped into buttons. A tree without the mark (parsed by
- * another processor, or built by hand) is read as it always was.
+ * A tree parsed with the interaction tokenizer is marked so at its root, and its interactions
+ * are the tokenizer's own nodes, which nothing else rewrites: each becomes an element, or text
+ * if it does not parse. Text nodes are not read in such a tree -- any `?[` in one is something
+ * Markdown has already rewritten, `\?[` with its escape consumed, and reading it as a question
+ * would turn text the author escaped into buttons. A tree without the mark (parsed by another
+ * processor, or built by hand) is read from its text nodes, as it always was.
  */
 export function transformInteractionsInTree(
   tree: Node,
   warnLabel: string
 ): void {
   const rootData = tree.data as Record<string, unknown> | undefined;
-  const tokenized = rootData?.[TOKENIZED_TREE] === true;
   const parser = new InteractionParser();
+
+  if (rootData?.[TOKENIZED_TREE] === true) {
+    visit(
+      tree,
+      INTERACTION_NODE,
+      (node: Literal, index: number | null, parent: Parent | null) => {
+        if (index === null || parent === null) return;
+        const value = node.value as string;
+        const parsed = parseWhole(value, parser, warnLabel);
+        parent.children.splice(
+          index,
+          1,
+          parsed
+            ? ({
+                type: 'element',
+                data: { hName: 'custom-variable', hProperties: parsed },
+              } as InteractionElementNode)
+            : ({ type: 'text', value } as Literal)
+        );
+      }
+    );
+    return;
+  }
 
   visit(
     tree,
@@ -72,8 +125,6 @@ export function transformInteractionsInTree(
     (node: Literal, index: number | null, parent: Parent | null) => {
       // Input validation
       if (index === null || parent === null) return;
-      const marks = node.data as Record<string, unknown> | undefined;
-      if (tokenized && !marks?.[TOKENIZED_INTERACTION]) return;
 
       const value = node.value as string;
 
@@ -82,9 +133,6 @@ export function transformInteractionsInTree(
         `\\?\\[(${INTERACTION_CONTENT_SOURCE})\\](?!\\()`
       );
       const match = interactionRegex.exec(value);
-      // A tokenized node may carry text merged in after its interaction; only its start was
-      // claimed by the tokenizer.
-      if (tokenized && match && match.index !== 0) return;
 
       if (match) {
         const fullMatch = match[0];
