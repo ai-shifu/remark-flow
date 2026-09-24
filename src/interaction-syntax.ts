@@ -12,8 +12,8 @@
  *
  * So the brackets are claimed before any of that runs. This construct starts at `?[` and ends at
  * the first `]` the escape rule leaves unescaped, exactly where `INTERACTION_CONTENT_SOURCE` ends
- * it, and the whole span becomes a text node carrying the source unchanged. The existing visitor
- * then finds it there and parses it, as it always has, but now from what the author wrote.
+ * it, and the whole span becomes one node carrying the source unchanged (see `INTERACTION_NODE`),
+ * which the plugins then parse from what the author wrote.
  *
  * `?[text](url)` is a link, not an interaction, as the visitor's lookahead has always said, so a
  * `]` followed by `(` gives the span back to Markdown.
@@ -38,18 +38,24 @@ interface Token {
 }
 
 interface CompileContext {
-  enter(node: { type: 'text'; value: string }, token: Token): unknown;
+  enter(node: { type: string; value: string }, token: Token): unknown;
   exit(token: Token): unknown;
   sliceSerialize(token: Token): string;
   stack: Array<{
     type: string;
     value?: string;
-    data?: Record<string, unknown>;
   }>;
 }
 
-/** Set on a text node this construct produced, so the visitor knows it holds an interaction. */
-export const TOKENIZED_INTERACTION = 'flowInteraction';
+/**
+ * The node type this construct produces.
+ *
+ * Its own type, not `text`: GFM finds `www.` links and emails by rewriting text nodes after the
+ * parse, and it cut an interaction whose option carried `https://www.postgresql.org` into
+ * text and a link, so the question was never recognised. Nothing that rewrites text touches a
+ * node of another type; the plugins turn each one into an element, or back into text.
+ */
+export const INTERACTION_NODE = 'flowInteraction';
 
 /**
  * Set on the root of a tree parsed with this construct registered.
@@ -181,7 +187,7 @@ export function interactionSyntax(): Record<string, unknown> {
   };
 }
 
-/** The mdast extension: the whole span becomes a text node holding the source as written. */
+/** The mdast extension: the whole span becomes one node holding the source as written. */
 export function interactionFromMarkdown(): Record<string, unknown> {
   return {
     transforms: [
@@ -191,14 +197,13 @@ export function interactionFromMarkdown(): Record<string, unknown> {
     ],
     enter: {
       [INTERACTION](this: CompileContext, token: Token) {
-        this.enter({ type: 'text', value: '' }, token);
+        this.enter({ type: INTERACTION_NODE, value: '' }, token);
       },
     },
     exit: {
       [INTERACTION](this: CompileContext, token: Token) {
         const node = this.stack[this.stack.length - 1];
         node.value = this.sliceSerialize(token);
-        node.data = { ...node.data, [TOKENIZED_INTERACTION]: true };
         this.exit(token);
       },
     },

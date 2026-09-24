@@ -201,6 +201,9 @@ test('escaped options come back unchanged through the whole pipeline', () => {
     '*not emphasis*',
     '`not code`',
     '&amp; stays',
+    'www.example.com',
+    'https://www.postgresql.org/docs/current/',
+    'mail me at a@b.co',
   ];
   for (let i = 0; i < 300; i += 1) {
     samples.push(word());
@@ -237,4 +240,31 @@ test('an escaped question after a real one on the same line stays text', () => {
   const found = interactions(tree);
   assert.equal(found.length, 1);
   assert.deepEqual(found[0].buttonTexts, ['A', 'B']);
+});
+
+test('an option with a www. address or an email is not cut up by GFM after parsing', () => {
+  // GFM finds `www.` links and emails in text nodes after the parse, which split the node the
+  // tokenizer produced. The question a 2.0 lesson asked on sim had `https://www.postgresql.org`
+  // as its last option and was shown as raw text.
+  const got = only(
+    String.raw`?[%{{v}} Spring https:\/\/docs.spring.io\/a || PostgreSQL https:\/\/www.postgresql.org\/docs\/current\/ || 写信 a@b.co]`
+  );
+  assert.deepEqual(got.buttonTexts, [
+    'Spring https://docs.spring.io/a',
+    'PostgreSQL https://www.postgresql.org/docs/current/',
+    '写信 a@b.co',
+  ]);
+});
+
+test('an interaction that does not parse is left as its text, with no node of its own behind', () => {
+  const tree = render('先 ?[%{bad} A | B] 后');
+  assert.equal(interactions(tree).length, 0);
+  const types = [];
+  const walk = node => {
+    types.push(node.type);
+    (node.children ?? []).forEach(walk);
+  };
+  walk(tree);
+  assert.ok(!types.includes('flowInteraction'), JSON.stringify(types));
+  assert.ok(JSON.stringify(tree).includes('?[%{bad} A | B]'));
 });
