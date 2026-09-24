@@ -5,6 +5,7 @@ import {
   type RemarkCompatibleResult,
 } from './interaction-parser';
 import { INTERACTION_CONTENT_SOURCE } from './escaping';
+import { TOKENIZED_INTERACTION, TOKENIZED_TREE } from './interaction-syntax';
 
 interface InteractionElementNode extends Node {
   data: {
@@ -50,11 +51,19 @@ function createSegments(
  *
  * @param tree - The AST to transform in place
  * @param warnLabel - Label used in the console warning on parse failures
+ *
+ * A tree parsed with the interaction tokenizer is marked so at its root. In such a tree only the
+ * text nodes the tokenizer produced hold interactions: any other `?[` in a text node is one
+ * Markdown has already rewritten -- `\?[` with its escape consumed -- and reading it as a
+ * question would turn text the author escaped into buttons. A tree without the mark (parsed by
+ * another processor, or built by hand) is read as it always was.
  */
 export function transformInteractionsInTree(
   tree: Node,
   warnLabel: string
 ): void {
+  const rootData = tree.data as Record<string, unknown> | undefined;
+  const tokenized = rootData?.[TOKENIZED_TREE] === true;
   const parser = new InteractionParser();
 
   visit(
@@ -63,6 +72,8 @@ export function transformInteractionsInTree(
     (node: Literal, index: number | null, parent: Parent | null) => {
       // Input validation
       if (index === null || parent === null) return;
+      const marks = node.data as Record<string, unknown> | undefined;
+      if (tokenized && !marks?.[TOKENIZED_INTERACTION]) return;
 
       const value = node.value as string;
 
@@ -71,6 +82,9 @@ export function transformInteractionsInTree(
         `\\?\\[(${INTERACTION_CONTENT_SOURCE})\\](?!\\()`
       );
       const match = interactionRegex.exec(value);
+      // A tokenized node may carry text merged in after its interaction; only its start was
+      // claimed by the tokenizer.
+      if (tokenized && match && match.index !== 0) return;
 
       if (match) {
         const fullMatch = match[0];

@@ -72,6 +72,10 @@ tests/                         # Comprehensive test suite
 - **Don't hardcode magic numbers** - Use named constants for parsing rules
 - **Don't break backward compatibility** - This is a published npm package
 - **Don't commit without testing real-world markdown** - Test with actual remark integration
+  - The jest suite builds trees by hand, so it never sees what Markdown does before the plugin runs
+    (escapes consumed, GFM autolinks, math). Anything that changes how `?[...]` is read needs a case in
+    `tests/pipeline/rendering-pipeline.test.mjs`, which runs the built package through
+    remark-parse + GFM + math + breaks: `npm run test:pipeline`.
 
 ## Project Overview
 
