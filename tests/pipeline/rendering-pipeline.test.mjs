@@ -221,3 +221,20 @@ test('escaped options come back unchanged through the whole pipeline', () => {
     );
   }
 });
+
+test('a tree parsed elsewhere is still read the way it always was', () => {
+  // `runSync` on a tree this processor did not parse: nothing in it was tokenized, so the
+  // plugin must fall back to finding interactions in text, as it did before the tokenizer.
+  const tree = unified().use(remarkParse).parse('Pick: ?[%{{x}} A | B]');
+  const processor = unified().use(remarkParse).use(remarkFlow);
+  const found = interactions(processor.runSync(tree));
+  assert.equal(found.length, 1);
+  assert.deepEqual(found[0].buttonTexts, ['A', 'B']);
+});
+
+test('an escaped question after a real one on the same line stays text', () => {
+  const tree = render(String.raw`?[%{{x}} A | B] then \?[C | D]`);
+  const found = interactions(tree);
+  assert.equal(found.length, 1);
+  assert.deepEqual(found[0].buttonTexts, ['A', 'B']);
+});

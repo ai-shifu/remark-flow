@@ -3,8 +3,8 @@ import { transformInteractionsInTree } from './interaction-plugin-core';
 import { registerInteractionSyntax } from './interaction-syntax';
 
 export default function remarkInteraction(this: unknown) {
-  const tokenized = registerInteractionSyntax(this);
+  registerInteractionSyntax(this);
   return (tree: Node) => {
-    transformInteractionsInTree(tree, 'interaction', tokenized);
+    transformInteractionsInTree(tree, 'interaction');
   };
 }

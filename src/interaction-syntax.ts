@@ -51,6 +51,15 @@ interface CompileContext {
 /** Set on a text node this construct produced, so the visitor knows it holds an interaction. */
 export const TOKENIZED_INTERACTION = 'flowInteraction';
 
+/**
+ * Set on the root of a tree parsed with this construct registered.
+ *
+ * Whether a plugin is attached to a processor says nothing about the tree it is given:
+ * `runSync(tree)` can hand it one parsed by another processor, or built by hand, in which nothing
+ * was tokenized. The visitor reads this mark, not the registration, to know which it has.
+ */
+export const TOKENIZED_TREE = 'flowInteractionTokenized';
+
 const QUESTION_MARK = 63;
 const LEFT_BRACKET = 91;
 const RIGHT_BRACKET = 93;
@@ -175,6 +184,11 @@ export function interactionSyntax(): Record<string, unknown> {
 /** The mdast extension: the whole span becomes a text node holding the source as written. */
 export function interactionFromMarkdown(): Record<string, unknown> {
   return {
+    transforms: [
+      (tree: { data?: Record<string, unknown> }) => {
+        tree.data = { ...tree.data, [TOKENIZED_TREE]: true };
+      },
+    ],
     enter: {
       [INTERACTION](this: CompileContext, token: Token) {
         this.enter({ type: 'text', value: '' }, token);
@@ -206,12 +220,11 @@ const isProcessor = (value: unknown): value is ProcessorLike =>
  *
  * A plugin called through `unified().use()` runs with the processor as `this`; one called by hand
  * -- `remarkFlow()(tree)`, as older code and the tests do -- has none, and keeps working on the
- * tree it is given as before. Returns whether the tokenizer was registered, which tells the
- * visitor which of the two it is looking at.
+ * tree it is given as before.
  */
-export function registerInteractionSyntax(self: unknown): boolean {
+export function registerInteractionSyntax(self: unknown): void {
   if (!isProcessor(self)) {
-    return false;
+    return;
   }
   const data = self.data();
   const add = (field: string, value: unknown) => {
@@ -223,7 +236,6 @@ export function registerInteractionSyntax(self: unknown): boolean {
   };
   add('micromarkExtensions', SYNTAX);
   add('fromMarkdownExtensions', FROM_MARKDOWN);
-  return true;
 }
 
 // One instance each, so a processor that attaches several of these plugins registers once.

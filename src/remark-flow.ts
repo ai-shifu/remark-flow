@@ -8,8 +8,8 @@ import { registerInteractionSyntax } from './interaction-syntax';
 export default function remarkFlow(this: unknown) {
   // The tokenizer has to be in place before the Markdown is parsed, not after, so it is
   // registered here, where the processor is.
-  const tokenized = registerInteractionSyntax(this);
+  registerInteractionSyntax(this);
   return (tree: Node) => {
-    transformInteractionsInTree(tree, 'interaction', tokenized);
+    transformInteractionsInTree(tree, 'interaction');
   };
 }
