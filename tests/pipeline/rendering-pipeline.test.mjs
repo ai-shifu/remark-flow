@@ -1656,3 +1656,53 @@ test('physical tab stops retain code versus paragraph semantics in mixed contain
     }
   }
 });
+
+test('native HTML block admission does not require a complete opening tag', () => {
+  const q = '?[%{{ real }} A|B]';
+  const prefixes = ['<div\n{{ unfinished'];
+  for (const tag of ['script', 'style', 'pre', 'textarea']) {
+    for (const opener of [`<${tag}`, `<${tag} title="unfinished`]) {
+      prefixes.push(`${opener}\n\n{{ unfinished\n</${tag}>`);
+    }
+  }
+  for (const [first, continuation] of [
+    ['> ', '> '],
+    ['- ', '  '],
+    ['> - ', '>   '],
+  ]) {
+    for (const opener of ['<!--', '<?x', '<![CDATA[', '<!DOCTYPE']) {
+      prefixes.push(
+        `${first}${opener}\n${continuation}{{ unfinished\n${continuation}{{ still unfinished`
+      );
+    }
+  }
+  for (const prefix of prefixes) {
+    for (const eol of ['\n', '\r\n', '\r']) {
+      const source = `${prefix}\n\n${q}`.replaceAll('\n', eol);
+      const native = unified().use(remarkParse).parse(source);
+      const html = [];
+      const walk = node => {
+        if (node.type === 'html') html.push(node.value);
+        (node.children ?? []).forEach(walk);
+      };
+      walk(native);
+      assert.equal(html.length, 1, source);
+      assert.ok(html[0].includes('{{ unfinished'), source);
+      assert.deepEqual(extractVariableNames(source), ['real'], source);
+      for (const plugin of [
+        remarkFlow,
+        remarkInteraction,
+        remarkCustomVariable,
+      ]) {
+        const found = interactions(
+          render({ value: Buffer.from(source) }, plugin)
+        );
+        assert.deepEqual(
+          found.map(control => control.variableName),
+          ['real'],
+          source
+        );
+      }
+    }
+  }
+});

@@ -1094,3 +1094,51 @@ test.each(containerTabCases)(
     }
   }
 );
+
+describe('native HTML block admission', () => {
+  test.each(['\n', '\r\n', '\r'])(
+    'keeps bounded incomplete openings with %j source',
+    eol => {
+      const q = '?[%{{ real }} A|B]';
+      for (const tag of ['script', 'style', 'pre', 'textarea']) {
+        for (const opener of [`<${tag}`, `<${tag} title="unfinished`]) {
+          const source =
+            `${opener}\n\n{{ unfinished\n</${tag}>\n\n${q}`.replace(/\n/g, eol);
+          expect(extractVariableNames(source)).toEqual(['real']);
+        }
+      }
+      expect(
+        extractVariableNames(`<div\n{{ unfinished\n\n${q}`.replace(/\n/g, eol))
+      ).toEqual(['real']);
+      for (const [first, continuation] of [
+        ['> ', '> '],
+        ['- ', '  '],
+        ['> - ', '>   '],
+      ]) {
+        for (const opener of ['<!--', '<?x', '<![CDATA[', '<!DOCTYPE']) {
+          const prefix = `${first}${opener}\n${continuation}{{ unfinished\n${continuation}{{ still unfinished`;
+          const source = `${prefix}\n\n${q}`.replace(/\n/g, eol);
+          expect(extractVariableNames(source)).toEqual(['real']);
+          const markers = findDocumentVariableMarkers(source);
+          expect(markers[0].end).toBeLessThanOrEqual(source.indexOf('?['));
+          expect(markers[markers.length - 1].name).toBe('real');
+        }
+      }
+    }
+  );
+
+  test('retains the established plain incomplete-token and false-prefix behavior', () => {
+    expect(extractVariableNames('<!-- `{{` then ?[%{{ real }} A|B]')).toEqual([
+      'real',
+    ]);
+    for (const prefix of [
+      '<scriptx',
+      '<script/>{{ unfinished',
+      'Text <script',
+    ]) {
+      expect(
+        extractVariableNames(`${prefix}\n{{ unfinished\n\n?[%{{ real }} A|B]`)
+      ).toEqual([]);
+    }
+  });
+});

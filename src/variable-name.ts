@@ -239,7 +239,7 @@ function rawHtmlOpening(
   start: number,
   missingClosers: Map<string, number>
 ): { name: string; end: number } | null {
-  const opening = /^ {0,3}<(script|style|pre|textarea)(?=[\t\n\f\r >])/i.exec(
+  const opening = /^ {0,3}<(script|style|pre|textarea)(?=[\t\n\f\r >]|$)/i.exec(
     text.slice(start, start + 16)
   );
   if (!opening) return null;
@@ -248,7 +248,7 @@ function rawHtmlOpening(
     start + opening[0].indexOf('<'),
     missingClosers
   );
-  return end === null ? null : { name: opening[1], end };
+  return { name: opening[1], end: end ?? start + opening[0].length };
 }
 
 /** Preserve the opening token's attribute scope separately from a raw-text HTML body. */
@@ -280,20 +280,54 @@ function terminatedHtmlBlockSpan(
   start: number,
   missingClosers: Map<string, number>,
   lines: DocumentLines,
-  blockEnd?: () => number
+  blockEnd?: () => number,
+  steps: readonly ContainerStep[] = []
 ): LiteralSpan | null {
   const opening = /^ {0,3}<(?:!--|\?|!\[CDATA\[|![A-Z])/.exec(
     text.slice(start, start + 12)
   );
   if (!opening) return null;
-  const tokenEnd = htmlLiteralEnd(
-    text,
-    start + opening[0].indexOf('<'),
-    missingClosers
-  );
-  if (tokenEnd === null) return null;
   const limit = blockEnd?.() ?? text.length;
-  if (tokenEnd > limit) return null;
+  const prefix = opening[0].slice(opening[0].indexOf('<'));
+  const closing =
+    prefix === '<!--'
+      ? '-->'
+      : prefix === '<?'
+        ? '?>'
+        : prefix === '<![CDATA['
+          ? ']]>'
+          : '>';
+  let from = start + opening[0].length;
+  let closingLine = containingLine(lines, from);
+  let tokenEnd: number | null = null;
+  for (;;) {
+    const closingStart = findClosing(text, closing, from, missingClosers);
+    if (closingStart < 0 || closingStart + closing.length > limit) break;
+    if (closing === '>' && steps.length) {
+      while (
+        closingLine + 1 < lines.length &&
+        lines.start(closingLine + 1) <= closingStart
+      )
+        closingLine++;
+      const line = lines.at(closingLine);
+      const content = containerContentStart(
+        text.slice(line.start, line.contentEnd),
+        steps
+      );
+      if (content !== null && closingStart < line.start + content) {
+        from = closingStart + closing.length;
+        continue;
+      }
+    }
+    tokenEnd = closingStart + closing.length;
+    break;
+  }
+  // Keep the historical plain incomplete-token fallback; a confirmed container
+  // boundary can still end a native block without its terminator.
+  if (tokenEnd === null)
+    return limit < text.length
+      ? { bodyStart: start + opening[0].length, bodyEnd: limit, end: limit }
+      : null;
   const end = Math.min(
     limit,
     lines.at(containingLine(lines, tokenEnd)).contentEnd
@@ -1024,7 +1058,8 @@ const scanDocumentVariableMarkers = (
               contentStart,
               missingHtmlClosers,
               lines,
-              blockEnd
+              blockEnd,
+              container
             )
           : null;
       if (terminatedHtml) {
