@@ -6,6 +6,7 @@ import {
 } from './interaction-parser';
 import { INTERACTION_CONTENT_SOURCE } from './escaping';
 import { INTERACTION_NODE, TOKENIZED_TREE } from './interaction-syntax';
+import { readVariableMarker } from './variable-name';
 
 interface InteractionElementNode extends Node {
   data: {
@@ -46,8 +47,8 @@ function createSegments(
 /**
  * Parse `value` as one whole interaction, or return null if it should stay text.
  *
- * Invalid variable syntax is kept as text rather than misparsed: `%{variable}` with one brace,
- * or `%{{}}` with no name, would otherwise become display buttons.
+ * A leading assignment is validated after reading its whole body. Marker-looking text inside
+ * an opaque name or an option does not change whether the interaction is valid.
  */
 function parseWhole(
   value: string,
@@ -59,13 +60,11 @@ function parseWhole(
   );
   if (!whole) return null;
   const innerContent = whole[1];
-  if (
-    innerContent.includes('%{') &&
-    (!innerContent.includes('%{{') || innerContent.includes('%{{}}'))
-  ) {
+  if (innerContent.startsWith('%{') && !innerContent.startsWith('%{{')) {
     return null;
   }
   try {
+    if (parser.parse(value).error) return null;
     return parser.parseToRemarkFormat(value);
   } catch (error) {
     console.warn(`Failed to parse ${warnLabel} syntax:`, error);
@@ -91,7 +90,8 @@ function parseWhole(
  */
 export function transformInteractionsInTree(
   tree: Node,
-  warnLabel: string
+  warnLabel: string,
+  source?: string
 ): void {
   const rootData = tree.data as Record<string, unknown> | undefined;
   const parser = new InteractionParser();
@@ -102,7 +102,14 @@ export function transformInteractionsInTree(
       INTERACTION_NODE,
       (node: Literal, index: number | null, parent: Parent | null) => {
         if (index === null || parent === null) return;
-        const value = node.value as string;
+        // Micromark replaces NUL with U+FFFD before extensions run. When the VFile source is
+        // available, validate the original marker rather than silently creating a different key.
+        const start = node.position?.start.offset;
+        const end = node.position?.end.offset;
+        const value =
+          source !== undefined && start !== undefined && end !== undefined
+            ? source.slice(start, end)
+            : (node.value as string);
         const parsed = parseWhole(value, parser, warnLabel);
         parent.children.splice(
           index,
@@ -135,27 +142,18 @@ export function transformInteractionsInTree(
       const match = interactionRegex.exec(value);
 
       if (match) {
+        const markerOpen = value.lastIndexOf('?[%{{', match.index);
+        if (markerOpen >= 0 && markerOpen < match.index) {
+          const marker = readVariableMarker(value, markerOpen + 3);
+          if (!marker || marker.end > match.index) return;
+        }
         const fullMatch = match[0];
         const startIndex = match.index;
         const endIndex = startIndex + fullMatch.length;
 
         try {
-          // Check for invalid variable syntax: keep the original text
-          // instead of misparsing %{variable} / %{{}} as display buttons.
-          const innerContent = match[1];
-          if (innerContent.includes('%{')) {
-            if (!innerContent.includes('%{{')) {
-              // Contains invalid variable syntax %{variable} instead of %{{variable}}
-              return;
-            }
-            // Check for empty variable name %{{}}
-            if (innerContent.includes('%{{}}')) {
-              return;
-            }
-          }
-
-          const parsedResult = parser.parseToRemarkFormat(fullMatch);
-
+          const parsedResult = parseWhole(fullMatch, parser, warnLabel);
+          if (!parsedResult) return;
           // Create AST segments
           const segments = createSegments(
             value,

@@ -1,9 +1,13 @@
 import {
   createVariableExpressionRegex,
   extractVariableNames,
+  findVariableMarkers,
+  formatVariableAssignment,
+  formatVariableReference,
   InteractionParser,
   isValidVariableName,
   normalizeVariableName,
+  readVariableMarker,
   VARIABLE_ASSIGNMENT_SOURCE,
   VARIABLE_NAME_SOURCE,
   VARIABLE_REFERENCE_SOURCE,
@@ -30,6 +34,16 @@ const names = [
   'café',
   'آپ؟',
   '🙂',
+  'has  two spaces',
+  'a\u00a0b',
+  'a{b',
+  'a}b',
+  'a}',
+  '{{nested',
+  'a[b]c',
+  'a]b|//... [c]',
+  String.raw`a\]b`,
+  '"quoted"',
 ];
 
 describe('the shared variable-name grammar', () => {
@@ -52,18 +66,22 @@ describe('the shared variable-name grammar', () => {
   test.each([
     '',
     '   ',
-    'a b',
     'a\tb',
     'a\nb',
     'a\rb',
-    'a\u00a0b',
-    'a{b',
-    'a}b',
-  ])('rejects a blank name, internal whitespace or a brace: %s', name => {
-    expect(normalizeVariableName(name)).toBeNull();
-    expect(isValidVariableName(name)).toBe(false);
-    expect(extractVariableNames(`{{${name}}}`)).toEqual([]);
-  });
+    'a\u0000b',
+    'a\u007fb',
+    'a\u0085b',
+    'a\u2028b',
+    'a\u2029b',
+  ])(
+    'rejects a blank name or an internal control or line separator: %s',
+    name => {
+      expect(normalizeVariableName(name)).toBeNull();
+      expect(isValidVariableName(name)).toBe(false);
+      expect(extractVariableNames(`{{${name}}}`)).toEqual([]);
+    }
+  );
 
   test('extracts assignments and references in order without changing existing source scope', () => {
     const text = [
@@ -80,6 +98,7 @@ describe('the shared variable-name grammar', () => {
       'a|b',
       'a...b',
       'a//b',
+      'has space',
     ]);
   });
 
@@ -126,7 +145,13 @@ describe('the shared variable-name grammar', () => {
     expect(normalizeVariableName(`${whitespace}问题？${whitespace}`)).toBe(
       '问题？'
     );
-    expect(isValidVariableName(`a${whitespace}b`)).toBe(false);
+    const point = whitespace.codePointAt(0)!;
+    const forbiddenInside =
+      point <= 0x1f ||
+      (point >= 0x7f && point <= 0x9f) ||
+      point === 0x2028 ||
+      point === 0x2029;
+    expect(isValidVariableName(`a${whitespace}b`)).toBe(!forbiddenInside);
     expect(
       extractVariableNames(`{{${whitespace}问题？${whitespace}}}`)
     ).toEqual(['问题？']);
@@ -149,6 +174,47 @@ describe('the shared variable-name grammar', () => {
       ).toBe(name);
     }
   );
+
+  test('reads the first closing marker once, without decoding or nested extraction', () => {
+    const source = 'prefix {{ outer {{inner }} suffix {{ next }}';
+    expect(findVariableMarkers(source).map(marker => marker.name)).toEqual([
+      'outer {{inner',
+      'next',
+    ]);
+    expect(extractVariableNames(source)).toEqual(['outer {{inner', 'next']);
+    expect(readVariableMarker('{{a}}}')).toMatchObject({
+      rawName: 'a',
+      name: 'a',
+      end: 5,
+    });
+    expect(readVariableMarker(String.raw`{{a\}b}}`)).toMatchObject({
+      name: String.raw`a\}b`,
+    });
+    expect(readVariableMarker('no marker')).toBeNull();
+    expect(readVariableMarker('{{name}}', -1)).toBeNull();
+    expect(readVariableMarker('{{name}}', 0.5)).toBeNull();
+    expect(readVariableMarker('{{name}}', 99)).toBeNull();
+    expect(readVariableMarker('{{unclosed')).toBeNull();
+    expect(
+      findVariableMarkers('{{bad\n{{inner}} {{good}}').map(
+        marker => marker.name
+      )
+    ).toEqual([null, 'good']);
+    expect(extractVariableNames('{{bad\n{{inner}} {{good}}')).toEqual(['good']);
+  });
+
+  test('serializes names with padding, including a final single brace', () => {
+    for (const name of names) {
+      const reference = formatVariableReference(name);
+      expect(reference).toBe(`{{ ${name} }}`);
+      expect(readVariableMarker(reference!)?.name).toBe(name);
+      expect(extractVariableNames(reference!)).toEqual([name]);
+      expect(formatVariableAssignment(name)).toBe(`%${reference}`);
+    }
+    expect(normalizeVariableName('a}}b')).toBeNull();
+    expect(formatVariableReference('a}}b')).toBeNull();
+    expect(formatVariableAssignment('')).toBeNull();
+  });
 });
 
 describe('variable names in interactions', () => {
@@ -188,7 +254,7 @@ describe('variable names in interactions', () => {
     });
   });
 
-  test.each(['has space', 'a\tb', 'a{b', 'a}b'])(
+  test.each(['a\tb', 'a\u0000b', 'a\u0085b', 'a\u2028b'])(
     'does not assign to an invalid name %s',
     name => {
       expect(
@@ -197,8 +263,38 @@ describe('variable names in interactions', () => {
     }
   );
 
-  test('does not change the existing closing bracket boundary', () => {
+  test('reads brackets inside the marker before the closing interaction bracket', () => {
     const source = '?[%{{a]b}} 男 | 女]';
+    expect(parser.parseToRemarkFormat(source)).toEqual({
+      variableName: 'a]b',
+      buttonTexts: ['男', '女'],
+      buttonValues: ['男', '女'],
+      isMultiSelect: false,
+    });
+  });
+
+  test('the first closing marker wins and its remaining text is option content', () => {
+    expect(parser.parseToRemarkFormat('?[%{{a}}b}} 男 | 女]')).toEqual({
+      variableName: 'a',
+      buttonTexts: ['b}} 男', '女'],
+      buttonValues: ['b}} 男', '女'],
+      isMultiSelect: false,
+    });
+  });
+
+  test('does not turn an unclosed assignment into a truncated button', () => {
+    const source = '?[%{{a]b 男 | 女]';
     expect(parser.parseToRemarkFormat(source)).toEqual({ placeholder: source });
+  });
+
+  test.each([
+    '?[%{{ broken ?[INNER | NEXT]',
+    '?[%{{ broken ?[INNER | NEXT]\n',
+    '?[%{{ broken ?[INNER | NEXT] }}',
+  ])('the text-tree fallback does not create buttons inside %s', source => {
+    const tree = createParentNode([createTextNode(source)]);
+    remarkCustomVariable()(tree);
+    expect(findCustomVariableNodes(tree)).toEqual([]);
+    expect(tree.children[0]).toMatchObject({ type: 'text', value: source });
   });
 });

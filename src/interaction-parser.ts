@@ -17,6 +17,7 @@ import {
 } from './escaping';
 import {
   normalizeVariableName,
+  readVariableMarker,
   VARIABLE_ASSIGNMENT_SOURCE,
 } from './variable-name';
 
@@ -147,6 +148,9 @@ export class InteractionParser {
         this._layer2DetectVariable(innerContent);
 
       // Layer 3: Specific content parsing
+      if (hasVariable && variableName === null) {
+        return this._createErrorResult('Invalid variable name');
+      }
       if (hasVariable && variableName) {
         return this._layer3ParseVariableInteraction(
           variableName,
@@ -250,15 +254,15 @@ export class InteractionParser {
   private _layer2DetectVariable(
     innerContent: string
   ): [boolean, string | null, string] {
-    const match = COMPILED_REGEXES.LAYER2_VARIABLE.exec(innerContent);
-
-    if (!match) {
+    if (!innerContent.startsWith('%{{')) {
       // No variable, entire content used for display button parsing
       return [false, null, innerContent];
     }
 
-    const variableName = normalizeVariableName(match[1]);
-    const remainingContent = match[2].trim();
+    const marker = readVariableMarker(innerContent, 1);
+    if (!marker) return [true, null, innerContent];
+    const variableName = normalizeVariableName(marker.rawName);
+    const remainingContent = innerContent.slice(marker.end).trim();
 
     return [true, variableName, remainingContent];
   }

@@ -299,11 +299,9 @@ describe('Multi-Select Functionality Tests', () => {
     test('should handle empty variable name with multi-select', () => {
       const result = parser.parse('?[%{{}} Option A||Option B]');
 
-      // Should handle gracefully - treat as non-variable buttons
-      expect(result.type).toBe(InteractionType.NON_ASSIGNMENT_BUTTON);
-      if (result.type === InteractionType.NON_ASSIGNMENT_BUTTON) {
-        expect(result.buttons).toHaveLength(2);
-      }
+      // Empty assignment markers are invalid and must not become misleading display buttons.
+      expect(result.type).toBe(null);
+      expect(result.error).toBeDefined();
     });
   });
 

@@ -11,8 +11,9 @@
  * an entity.
  *
  * So the brackets are claimed before any of that runs. This construct starts at `?[` and ends at
- * the first `]` the escape rule leaves unescaped, exactly where `INTERACTION_CONTENT_SOURCE` ends
- * it, and the whole span becomes one node carrying the source unchanged (see `INTERACTION_NODE`),
+ * the first `]` the escape rule leaves unescaped after a leading `%{{...}}` marker, exactly where
+ * `INTERACTION_CONTENT_SOURCE` ends it. The marker is opaque until its first literal `}}`.
+ * The whole span becomes one node carrying the source unchanged (see `INTERACTION_NODE`),
  * which the plugins then parse from what the author wrote.
  *
  * `?[text](url)` is a link, not an interaction, as the visitor's lookahead has always said, so a
@@ -71,6 +72,9 @@ const LEFT_BRACKET = 91;
 const RIGHT_BRACKET = 93;
 const LEFT_PAREN = 40;
 const BACKSLASH = 92;
+const PERCENT = 37;
+const LEFT_BRACE = 123;
+const RIGHT_BRACE = 125;
 // The characters a backslash escapes inside an interaction: `|`, `/`, `.`, `]`. Mirrors ESCAPABLE.
 const ESCAPABLE_CODES = new Set([124, 47, 46, 93]);
 
@@ -88,6 +92,8 @@ function tokenizeInteraction(
   ok: State,
   nok: State
 ): State {
+  let firstContent = true;
+  let hasAssignment = false;
   return start;
 
   // Every character is consumed inside a token of its own kind -- the `?[` and `]` markers, the
@@ -112,8 +118,14 @@ function tokenizeInteraction(
   // Data is only opened on a character it will hold: micromark rejects an empty token.
   function beforeContent(code: Code): State | undefined {
     if (code === null) {
+      if (hasAssignment) {
+        effects.exit(INTERACTION);
+        return ok(code);
+      }
       return nok(code);
     }
+    const leadingAssignment = firstContent && code === PERCENT;
+    firstContent = false;
     if (code === RIGHT_BRACKET) {
       return close(code);
     }
@@ -121,7 +133,64 @@ function tokenizeInteraction(
       return lineEnding(code);
     }
     effects.enter(DATA);
+    if (leadingAssignment) {
+      effects.consume(code);
+      return variableFirstBrace;
+    }
     return content(code);
+  }
+
+  function variableFirstBrace(code: Code): State | undefined {
+    if (code !== LEFT_BRACE) return content(code);
+    effects.consume(code);
+    return variableSecondBrace;
+  }
+
+  function variableSecondBrace(code: Code): State | undefined {
+    if (code !== LEFT_BRACE) return content(code);
+    effects.consume(code);
+    hasAssignment = true;
+    return variableBody;
+  }
+
+  function variableBody(code: Code): State | undefined {
+    if (code === null) {
+      // A confirmed assignment owns its tail even when it never closes. Rolling back here
+      // would let Markdown discover an inner `?[...]` and invent buttons inside the key.
+      effects.exit(DATA);
+      effects.exit(INTERACTION);
+      return ok(code);
+    }
+    if (isLineEnding(code)) {
+      effects.exit(DATA);
+      return variableLineEnding(code);
+    }
+    // Neither backslashes nor brackets have special meaning inside the marker.
+    effects.consume(code);
+    return code === RIGHT_BRACE ? variableAfterBrace : variableBody;
+  }
+
+  function variableAfterBrace(code: Code): State | undefined {
+    if (code !== RIGHT_BRACE) return variableBody(code);
+    effects.consume(code);
+    return content;
+  }
+
+  function variableLineEnding(code: Code): State | undefined {
+    effects.enter(LINE_ENDING);
+    effects.consume(code);
+    effects.exit(LINE_ENDING);
+    return variableBeforeData;
+  }
+
+  function variableBeforeData(code: Code): State | undefined {
+    if (code === null) {
+      effects.exit(INTERACTION);
+      return ok(code);
+    }
+    if (isLineEnding(code)) return variableLineEnding(code);
+    effects.enter(DATA);
+    return variableBody(code);
   }
 
   function lineEnding(code: Code): State | undefined {
@@ -135,6 +204,11 @@ function tokenizeInteraction(
 
   function content(code: Code): State | undefined {
     if (code === null) {
+      if (hasAssignment) {
+        effects.exit(DATA);
+        effects.exit(INTERACTION);
+        return ok(code);
+      }
       return nok(code);
     }
     if (code === RIGHT_BRACKET) {

@@ -167,14 +167,13 @@ const result = processor.processSync(`
 
 ### 变量名
 
-以下兼容规则沿用 AI 师傅授课引擎的现有实现，比
-[MarkdownFlow 公开规范](https://markdownflow.ai/docs/zh/specification/variables/)
-目前列出的字母、数字和下划线规则更宽。
+变量名是两端去掉原有 Python 空白集合后的非空 Unicode 原文。内部普通空格、标点、emoji、
+单个花括号、`[`、`]`、`|`、`//` 和 `...` 都会完整保留；内部不得包含 Unicode Cc 控制字符、
+U+2028、U+2029，也不能包含标记结束符 `}}`。
 
-变量名与授课引擎使用同一条 `[^{}\s]+` 规则：非空，不含空白或花括号，保留 Unicode
-以及 `?`、`？`、`:`、`/`、`|`、`...` 等标点。`{{ name }}` 中变量名两端的空白会被去掉，
-内部字符、大小写与标点不会被归一化。空白采用 Python 的定义，包含 U+0085、U+001C–001F；
-U+FEFF 会保留为变量名的一部分。交互块的现有边界保持不变：未转义的 `]` 仍会结束 `?[...]`。
+第一个字面 `}}` 结束标记；反斜杠和引号都是普通字符，不增加转义或解码规则，不合并内部空格，
+不做大小写或 Unicode 归一化。交互块开头的 `%{{...}}` 会先被整体读取，其中的 `]`、选项分隔符
+和 Markdown 符号不会截断变量名。两端空白集合包含 U+0085、U+001C–001F，U+FEFF 保留为键的一部分。
 
 ```markdown
 你的性别是？
@@ -188,7 +187,19 @@ U+FEFF 会保留为变量名的一部分。交互块的现有边界保持不变�
 
 `extractVariableNames(text)` 按源码出现顺序去重提取 `{{变量名}}`（包括 `%{{变量名}}`）；
 它保留现有全文扫描范围，不排除代码块或注释。`createVariableExpressionRegex('gu')`
-返回独立正则，第一捕获组是去掉两端空白后的变量名。
+返回独立正则，第一捕获组仍是合法且去掉两端空白后的变量名，适合验证完整标记。
+
+扫描全文时用 `findVariableMarkers(text)`，按第一个 `}}` 一次读取整段标记，不把键内部的 `{{`
+递归提取成其他变量。`readVariableMarker(text, start)` 只读取指定位置；两者返回
+`{ start, end, rawName, name }`，非法内容的 `name` 为 `null`。
+
+`formatVariableReference(name)` 和 `formatVariableAssignment(name)` 返回带两端空格的标记，
+非法名称返回 `null`。例如 `question}` 应写成 `{{ question} }}`；直接拼成 `{{question}}}`
+会提前闭合，得到另一个键 `question`。请复用格式化函数保持往返一致。
+
+独立调用 `parse`、`runSync` 时，也要把原始 Markdown 作为 `runSync` 的 VFile 参数传入。
+Markdown 在插件运行前会替换 NUL，插件需要原文才能拒绝非法键，避免将替换字符存成新变量；
+只有已经丢失原文的手工 AST 时，无法恢复这些信息。
 
 ## 📖 API 参考
 

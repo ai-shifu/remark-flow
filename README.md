@@ -177,15 +177,15 @@ The first separator type encountered determines the parsing mode:
 
 ### Variable names
 
-The compatibility rule below follows the existing AI-Shifu teaching engine. It is broader than
-the letters/numbers/underscore rule currently documented in the
-[public MarkdownFlow specification](https://markdownflow.ai/docs/specification/variables/).
+Variable names are opaque Unicode text after trimming the established Python whitespace set
+at both ends. Internal ordinary spaces, punctuation, emoji, single braces, `[` and `]`, `|`,
+`//`, and `...` are kept exactly as written. Names must be nonempty and cannot contain Unicode
+Cc control characters, U+2028, U+2029, or the literal marker terminator `}}`.
 
-Variable names follow the teaching engine's `[^{}\s]+` rule: they are nonempty and contain no
-whitespace or braces. Unicode and punctuation such as `?`, `？`, `:`, `/`, `|`, and `...` are
-preserved. Padding inside `{{ name }}` is trimmed; case and punctuation are not normalized.
-Whitespace follows Python's definition, including U+0085 and U+001C–001F; U+FEFF stays in the key.
-The existing interaction boundary still applies: an unescaped `]` ends `?[...]`.
+The first literal `}}` closes a marker. Backslashes and quotes are ordinary characters: there
+is no extra escaping, decoding, case folding or Unicode normalization. A leading `%{{...}}`
+is read as one unit before the interaction's `]`, option separators or Markdown can see its body.
+The padding set includes U+0085 and U+001C–001F; U+FEFF is retained as part of a name.
 
 ```markdown
 你的性别是？
@@ -199,8 +199,12 @@ Hosts can reuse the same grammar instead of maintaining their own identifier reg
 import {
   createVariableExpressionRegex,
   extractVariableNames,
+  findVariableMarkers,
+  formatVariableAssignment,
+  formatVariableReference,
   isValidVariableName,
   normalizeVariableName,
+  readVariableMarker,
   VARIABLE_NAME_SOURCE,
   VARIABLE_REFERENCE_SOURCE,
   VARIABLE_ASSIGNMENT_SOURCE,
@@ -208,12 +212,29 @@ import {
 
 extractVariableNames('%{{你的性别是？}} {{你的性别是？}}'); // ['你的性别是？']
 normalizeVariableName(' 你的性别是？ '); // '你的性别是？'
-isValidVariableName('has space'); // false
+isValidVariableName('has space'); // true
 createVariableExpressionRegex('gu'); // A fresh matcher; capture 1 is the trimmed name.
+formatVariableReference('question}'); // '{{ question} }}'
+formatVariableAssignment('Which [path] | level?'); // '%{{ Which [path] | level? }}'
 ```
 
 `extractVariableNames` scans the supplied source in order, including code fences and comments,
 and returns each name once. It does not change the host's policy for which source to inspect.
+Use `findVariableMarkers` for full-source scanning: each raw marker is read only once, so a
+`{{` inside its body does not open another variable. `readVariableMarker(text, start)` reads
+only the marker at that position; both return `{ start, end, rawName, name }`, with `name: null`
+for invalid bodies. The existing regex factory and source constants match valid markers and
+keep capture 1 normalized; they are suitable for validating a complete token, while the scanner
+also claims invalid outer markers so their contents cannot become nested variables.
+
+The formatters return `null` for invalid names and always add padding. That padding is needed
+when a name ends with a single `}`: `{{ question} }}` preserves `question}`, whereas
+`{{question}}}` closes earlier and names `question`.
+
+When transforming a parsed tree, pass the original source as the VFile argument to `runSync`
+as well as to `parse`. Markdown replaces NUL before extensions run; the original source lets
+the plugin reject that invalid key rather than treating the replacement character as a new key.
+No plugin can recover a character already lost from a manually supplied tree with no source.
 
 ## 📖 API Reference
 

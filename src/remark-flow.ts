@@ -9,7 +9,11 @@ export default function remarkFlow(this: unknown) {
   // The tokenizer has to be in place before the Markdown is parsed, not after, so it is
   // registered here, where the processor is.
   registerInteractionSyntax(this);
-  return (tree: Node) => {
-    transformInteractionsInTree(tree, 'interaction');
+  return (tree: Node, file?: { value?: unknown }) => {
+    transformInteractionsInTree(
+      tree,
+      'interaction',
+      typeof file?.value === 'string' ? file.value : undefined
+    );
   };
 }

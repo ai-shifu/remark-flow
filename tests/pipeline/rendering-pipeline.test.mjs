@@ -11,6 +11,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import { URL } from 'node:url';
 
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
@@ -19,12 +21,20 @@ import remarkMath from 'remark-math';
 import remarkBreaks from 'remark-breaks';
 
 const require = createRequire(import.meta.url);
+const contractCases = JSON.parse(
+  readFileSync(
+    new URL('../fixtures/variable-name-cases.json', import.meta.url),
+    'utf8'
+  )
+);
 const {
   remarkFlow,
   remarkInteraction,
   remarkCustomVariable,
   escapeInteractionText,
   InteractionParser,
+  extractVariableNames,
+  formatVariableAssignment,
 } = require('../../dist/index.js');
 
 const render = (markdown, plugin = remarkFlow) => {
@@ -34,7 +44,7 @@ const render = (markdown, plugin = remarkFlow) => {
     .use(remarkMath)
     .use(plugin)
     .use(remarkBreaks);
-  return processor.runSync(processor.parse(markdown));
+  return processor.runSync(processor.parse(markdown), markdown);
 };
 
 const interactions = tree => {
@@ -289,6 +299,16 @@ test('question keys and existing engine names survive the actual Markdown pipeli
     'name\ufeff',
     'a\ufeffb',
     '\ufeff',
+    'has  two spaces',
+    'a{b',
+    'a}b',
+    'a}',
+    '{{nested',
+    'a[b]c',
+    'a]b|//... [c]',
+    String.raw`a\]b`,
+    '**bold** https://www.example.com $x$ &amp;',
+    '"quoted"',
   ];
   for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
     for (const name of names) {
@@ -311,8 +331,82 @@ test('Python-only marker whitespace is trimmed without consuming U+FEFF from the
   assert.deepEqual(got.buttonTexts, ['男', '女']);
 });
 
-test('question keys do not change the existing interaction bracket boundary', () => {
+test('a bracket inside an assignment belongs to the name', () => {
   const got = only('?[%{{a]b}} 男 | 女]');
-  assert.equal(got.variableName, undefined);
-  assert.deepEqual(got.buttonTexts, ['%{{a']);
+  assert.equal(got.variableName, 'a]b');
+  assert.deepEqual(got.buttonTexts, ['男', '女']);
+});
+
+test('opaque variable delimiters and Markdown syntax survive with escaped option content', () => {
+  const name = String.raw`问题 {{内部} [a] | // ... \] **literal**`;
+  const source = `?[%{{ ${name} }} ${escapeInteractionText('https://example.com/a|b...')} | other]`;
+  const got = only(source);
+  assert.equal(got.variableName, name);
+  assert.deepEqual(got.buttonTexts, ['https://example.com/a|b...', 'other']);
+  assert.deepEqual(extractVariableNames(source), [name]);
+});
+
+test('a marker closing on the next source chunk still ends before the option syntax', () => {
+  // These prefixes are the states reached while an SSE response is being appended. No prefix
+  // is a complete interaction, so none may create a partial button before the final `]` arrives.
+  const source = '?[%{{ question] | // ... } name }} A | B]';
+  for (let end = 1; end < source.length; end += 1) {
+    assert.equal(
+      interactions(render(source.slice(0, end))).length,
+      0,
+      `prefix ${end}`
+    );
+  }
+  assert.equal(only(source).variableName, 'question] | // ... } name');
+});
+
+test('invalid and unclosed leading markers are kept whole instead of finding a nested key', () => {
+  for (const source of [
+    '?[%{{bad\n{{inner}} A | B]',
+    '?[%{{bad\u0085key}} A | B]',
+    '?[%{{bad\u0000key}} A | B]',
+    '?[%{{bad]unclosed A | B]',
+    '?[%{{ }} A | B]',
+    '?[%{{ broken ?[INNER | NEXT]',
+    '?[%{{ broken ?[INNER | NEXT]\n',
+    '?[%{{ broken ?[INNER | NEXT] }}',
+  ]) {
+    assert.equal(interactions(render(source)).length, 0, source);
+  }
+});
+
+test('ordinary multiline marker padding is accepted without allowing a newline in the key', () => {
+  const got = only('?[%{{\n question with spaces \r\n}} A | B]');
+  assert.equal(got.variableName, 'question with spaces');
+});
+
+test('padded serialization preserves a final single brace in an opaque key', () => {
+  const got = only(`?[${formatVariableAssignment('question}')} A | B]`);
+  assert.equal(got.variableName, 'question}');
+  const early = only('?[%{{question}}} A | B]');
+  assert.equal(early.variableName, 'question');
+  assert.deepEqual(early.buttonTexts, ['} A', 'B']);
+});
+
+test('the shared contract interactions survive every actual Markdown plugin path', () => {
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const sample of contractCases.interactions) {
+      assert.deepEqual(only(sample.source, plugin), {
+        variableName: sample.name,
+        buttonTexts: sample.buttons,
+        buttonValues: sample.values,
+        isMultiSelect: false,
+      });
+    }
+  }
+});
+
+test('original VFile offsets preserve invalid NUL and a valid literal replacement character', () => {
+  const tree = render(
+    '前缀🙂 ?[%{{bad\u0000key}} A | B] 中间 ?[%{{bad\ufffdkey}} A | B]'
+  );
+  const found = interactions(tree);
+  assert.equal(found.length, 1);
+  assert.equal(found[0].variableName, 'bad\ufffdkey');
+  assert.ok(JSON.stringify(tree).includes('bad\\u0000key'));
 });

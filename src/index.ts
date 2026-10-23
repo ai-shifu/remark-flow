@@ -11,12 +11,17 @@ export {
 export {
   createVariableExpressionRegex,
   extractVariableNames,
+  findVariableMarkers,
+  formatVariableAssignment,
+  formatVariableReference,
   isValidVariableName,
   normalizeVariableName,
+  readVariableMarker,
   VARIABLE_ASSIGNMENT_SOURCE,
   VARIABLE_NAME_SOURCE,
   VARIABLE_REFERENCE_SOURCE,
 } from './variable-name';
+export type { VariableMarker } from './variable-name';
 
 // The grammar's escape rule, so that anything else scanning for `?[...]` -- an editor's syntax
 // highlighting, a shortcode reader -- uses the same definition of where an interaction ends

@@ -285,8 +285,12 @@ This project implements a **layered parsing architecture** with strict syntax ru
 
 #### Layer 1: Basic Format Validation
 
-```regex
-/\?\[([^\]]*)\](?!\()/
+```typescript
+import { INTERACTION_CONTENT_SOURCE } from './src/escaping';
+
+const interactionPattern = new RegExp(
+  `\\?\\[(${INTERACTION_CONTENT_SOURCE})\\](?!\\()`
+);
 ```
 
 - **Valid**: `?[content]`
@@ -301,12 +305,16 @@ import { VARIABLE_ASSIGNMENT_SOURCE } from './src/variable-name';
 const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
 ```
 
-- **Variable names support**: Any nonempty sequence without whitespace or braces, matching the
-  teaching engine. Reuse `src/variable-name.ts` and its public helpers instead of copying a regex.
-- Whitespace means Python's set, not JavaScript's `\s` or `String.trim()`; the shared helpers
-  exclude U+0085 and U+001C–001F from names and preserve U+FEFF as part of a name.
+- **Variable names support**: Nonempty opaque Unicode text after trimming the established Python
+  padding set; internal ordinary spaces, punctuation, emoji and single braces are allowed.
+  Unicode Cc controls, U+2028, U+2029 and the literal terminator `}}` are forbidden inside names.
+- Reuse `src/variable-name.ts`. Full-source scanning must use `findVariableMarkers` so a marker
+  is claimed once through the first literal `}}`, including invalid bodies and inner `{{`.
+- Padding means Python's set, not JavaScript's `\s` or `String.trim()`; U+FEFF remains in keys.
 - **Example**: `%{{username}}`, `%{{用户名}}`, `%{{你的性别是？}}`
-- The existing `?[...]` closing-bracket boundary still applies; do not extend it in a name fix.
+- A leading `%{{...}}` is opaque to the interaction's `]`, option delimiters and Markdown.
+- Use the formatters' padding to preserve names ending with one `}`; do not add decoding or
+  special handling for backslashes, quotes, case or Unicode normalization.
 
 #### Layer 3: Content Parsing Patterns
 
@@ -386,7 +394,8 @@ const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
 
 3. **Variable Name Rules**
    - Must be nonempty after trimming surrounding marker whitespace
-   - Cannot contain whitespace or braces; preserve Unicode and punctuation as written
+   - May contain ordinary spaces and single braces; preserve all internal characters as written
+   - Cannot contain Unicode Cc controls, U+2028, U+2029 or the literal terminator `}}`
    - Case sensitive: `%{{userName}}` ≠ `%{{username}}`
 
 4. **Unicode Support**
@@ -500,8 +509,8 @@ function badParseFunction(content: string) {
 3. **Invalid Variable Names**
 
    ```typescript
-   // Input: '?[%{{has space}}...]'
-   // Output: Non-assignment fallback; no variableName
+   // Input: '?[%{{line\nbreak}}...]'
+   // Output: Invalid assignment kept as text; no variableName
    // MUST NOT: Attempt to process as variable
    ```
 
@@ -527,8 +536,8 @@ function badParseFunction(content: string) {
 ```typescript
 // ✅ EFFICIENT: Reuse compiled regex patterns
 const COMPILED_PATTERNS = {
-  interaction: /\?\[([^\]]*)\]/g,
-  variable: /%\{\{([^}]+)\}\}/,
+  interaction: new RegExp(`\\?\\[(${INTERACTION_CONTENT_SOURCE})\\]`, 'g'),
+  variable: new RegExp(VARIABLE_ASSIGNMENT_SOURCE),
   // Pre-compile all patterns at module level
 };
 
@@ -727,13 +736,16 @@ visit(tree, 'text', processVariables); // Second traversal
 
 ```typescript
 // Efficient regex patterns
-const INTERACTION_PATTERN = /\?\[([^\]]+)\]/g;
-const VARIABLE_PATTERN = /%\{\{([^}]+)\}\}/;
+const INTERACTION_PATTERN = new RegExp(
+  `\\?\\[(${INTERACTION_CONTENT_SOURCE})\\]`,
+  'g'
+);
+const VARIABLE_PATTERN = new RegExp(VARIABLE_ASSIGNMENT_SOURCE);
 
 // Cache compiled patterns
 const patterns = {
-  interaction: /\?\[([^\]]+)\]/g,
-  variable: /%\{\{([^}]+)\}\}/,
+  interaction: INTERACTION_PATTERN,
+  variable: VARIABLE_PATTERN,
   separator: /\s*\|\s*/,
   customValue: /^([^/]+)\/\/([^/]+)$/,
 };
@@ -868,6 +880,7 @@ node -e "const r=require('remark');const p=require('./dist/index.js').default;co
 
 ```typescript
 import { VARIABLE_ASSIGNMENT_SOURCE } from './src/variable-name';
+import { INTERACTION_CONTENT_SOURCE } from './src/escaping';
 
 // Enable debug mode in interaction parser
 const parser = createInteractionParser();
@@ -884,7 +897,7 @@ console.log('Layer 3 parsing result:', result);
 // Test specific regex patterns
 console.log(
   'Interaction pattern match:',
-  /\?\[([^\]]*)\](?!\()/.exec('?[test]')
+  new RegExp(`\\?\\[(${INTERACTION_CONTENT_SOURCE})\\](?!\\()`).exec('?[test]')
 );
 console.log(
   'Variable pattern match:',

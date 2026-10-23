@@ -23,6 +23,8 @@
  * parser to prove the meaning survived, and then this parser is what the browser reads it with.
  */
 
+import { RAW_VARIABLE_MARKER_SOURCE } from './variable-name';
+
 /** The characters a backslash may make ordinary. `/` covers `//`, `.` covers `...`. */
 export const ESCAPABLE = '|/.]';
 
@@ -187,5 +189,9 @@ export const splitOnEllipsis = (content: string): [string, string] | null => {
  * then closing on the very bracket it escapes. Without that, this regex and a left-to-right
  * scanner disagree about `?[a\\]`, and two parsers of one grammar must not.
  */
-export const INTERACTION_CONTENT_SOURCE =
-  '(?:\\\\[|/.\\]]|\\\\(?![|/.\\]])|[^\\]\\\\])*';
+const OPTION_CONTENT_SOURCE = '(?:\\\\[|/.\\]]|\\\\(?![|/.\\]])|[^\\]\\\\])*';
+
+// A leading assignment is read whole before the interaction's own `]` or option escapes can
+// see its contents. The negative prefix guard prevents falling back to a shorter interaction
+// if a `%{{` marker never closes.
+export const INTERACTION_CONTENT_SOURCE = `(?:%${RAW_VARIABLE_MARKER_SOURCE}${OPTION_CONTENT_SOURCE}|(?!%\\{\\{)${OPTION_CONTENT_SOURCE})`;

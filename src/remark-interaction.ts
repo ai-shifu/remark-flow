@@ -4,7 +4,11 @@ import { registerInteractionSyntax } from './interaction-syntax';
 
 export default function remarkInteraction(this: unknown) {
   registerInteractionSyntax(this);
-  return (tree: Node) => {
-    transformInteractionsInTree(tree, 'interaction');
+  return (tree: Node, file?: { value?: unknown }) => {
+    transformInteractionsInTree(
+      tree,
+      'interaction',
+      typeof file?.value === 'string' ? file.value : undefined
+    );
   };
 }
