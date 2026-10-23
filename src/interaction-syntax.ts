@@ -34,6 +34,7 @@ interface Effects {
   enter(type: string, fields?: Partial<Token>): Token;
   exit(type: string): Token;
   consume(code: Code): void;
+  attempt(construct: Construct, ok: State, nok: State): State;
   check(construct: Construct, ok: State, nok: State): State;
   interrupt(construct: unknown, ok: State, nok: State): State;
 }
@@ -54,7 +55,7 @@ interface Construct {
 interface FlowContext {
   interrupt?: boolean;
   currentConstruct: Construct;
-  now(): { offset: number };
+  now(): Point;
   parser: {
     constructs: {
       flow: Record<string, Construct[]>;
@@ -63,8 +64,14 @@ interface FlowContext {
   };
 }
 
+interface Point {
+  offset: number;
+}
+
 interface Token {
   type: string;
+  start?: Point;
+  end?: Point;
   flowNullOffsets?: number[];
   contentType?: string;
   previous?: Token;
@@ -125,6 +132,8 @@ const LESS_THAN = 60;
 const BACKSLASH = 92;
 const BACKTICK = 96;
 const NUMBER_SIGN = 35;
+const DOLLAR_SIGN = 36;
+const EXCLAMATION_MARK = 33;
 const SPACE = 32;
 const HEADING_DEPTH_MAX = 6;
 const LEFT_BRACE = 123;
@@ -141,7 +150,7 @@ const REPLACEMENT_CHARACTER = 0xfffd;
 const CARRIAGE_RETURN_LINE_FEED = -3;
 const HORIZONTAL_TAB = -2;
 const VIRTUAL_SPACE = -1;
-const literalCodeOpenings = new WeakMap<object, Set<number>>();
+const literalInlineOpenings = new WeakMap<object, Set<number>>();
 
 function previousLiteralCodeOpening(this: FlowContext, code: Code): boolean {
   const native = this.parser.constructs.text[BACKTICK]?.find(
@@ -150,21 +159,31 @@ function previousLiteralCodeOpening(this: FlowContext, code: Code): boolean {
   return native?.previous?.call(this, code) ?? true;
 }
 
-/** A rejected opening cannot pair with a tick exposed only by opaque-marker flow protection. */
-function tokenizeLiteralCodeOpening(
+function previousLiteralMathOpening(this: FlowContext, code: Code): boolean {
+  const native = this.parser.constructs.text[DOLLAR_SIGN]?.find(
+    construct => construct.name === 'mathText'
+  );
+  return native?.previous?.call(this, code) ?? true;
+}
+
+/** A rejected opening cannot pair with a delimiter exposed only by opaque-marker flow protection. */
+function tokenizeLiteralInlineOpening(
   this: FlowContext,
   effects: Effects,
   ok: State,
   nok: State
 ): State {
-  if (!literalCodeOpenings.get(this.parser)?.has(this.now().offset)) return nok;
+  if (!literalInlineOpenings.get(this.parser)?.has(this.now().offset))
+    return nok;
+  let opening: Code;
   return start;
   function start(code: Code): State | undefined {
+    opening = code;
     effects.enter('data');
     return run(code);
   }
   function run(code: Code): State | undefined {
-    if (code === BACKTICK) {
+    if (code === opening) {
       effects.consume(code);
       return run;
     }
@@ -439,14 +458,30 @@ function tokenizeOpaqueBlock(
   let codeOpeningSize = 0;
   let codeOpeningOffset = 0;
   let codeOpeningCrossedBoundary = false;
-  const rejectedCodeOpenings = new Set<number>();
+  let mathOpeningSize = 0;
+  let mathOpeningOffset = 0;
+  let mathOpeningCrossedBoundary = false;
+  let previousCode: Code = null;
+  const labels: Array<Token & { inactive?: boolean }> = [];
+  const rejectedInlineOpenings = new Set<number>();
   let chunk: Token;
   let outer: Token;
   const outerType = heading ? OPAQUE_HEADING : 'content';
   const html = context.parser.constructs.text[LESS_THAN]?.find(
     construct => construct.name === 'htmlText'
   );
+  const math = context.parser.constructs.text[DOLLAR_SIGN]?.find(
+    construct => construct.name === 'mathText'
+  );
+  const labelEnd = context.parser.constructs.text[RIGHT_BRACKET]?.find(
+    construct => construct.name === 'labelEnd'
+  );
+  let closingLabel: (Token & { inactive?: boolean }) | undefined;
   const continuationConstruct = { partial: true, tokenize: continuation };
+  const inlineContinuationConstruct = {
+    partial: true,
+    tokenize: inlineContinuation,
+  };
   const markerLineConstruct = { partial: true, tokenize: markerLine };
   const active = { ...context.currentConstruct, concrete: true };
   const inactive = { ...context.currentConstruct, concrete: false };
@@ -544,6 +579,28 @@ function tokenizeOpaqueBlock(
           ordinary
         )(code);
       }
+      if (!interaction && code === DOLLAR_SIGN && math) {
+        checkedSize = 0;
+        mathOpeningSize = 0;
+        mathOpeningOffset = context.now().offset;
+        mathOpeningCrossedBoundary = false;
+        return effects.check(
+          { partial: true, tokenize: mathSpan },
+          skipChecked,
+          skipMathOpening
+        )(code);
+      }
+      if (code === RIGHT_BRACKET && labels.length && labelEnd) {
+        closingLabel = labels.pop();
+        if (!closingLabel?.inactive) {
+          checkedSize = 0;
+          return effects.check(
+            { partial: true, tokenize: linkResourceSpan },
+            skipLinkResource,
+            ordinary
+          )(code);
+        }
+      }
       if (heading && isSpace(code)) {
         checkedSize = 0;
         return effects.check(
@@ -563,7 +620,15 @@ function tokenizeOpaqueBlock(
   }
 
   function ordinary(code: Code): State | undefined {
+    const prior = previousCode;
     effects.consume(code);
+    previousCode = code;
+    if (!marker && code === LEFT_BRACKET) {
+      labels.push({
+        type: prior === EXCLAMATION_MARK ? 'labelImage' : 'labelLink',
+        end: context.now(),
+      });
+    }
     const wasMarker = marker;
     if (marker) {
       if (brace && code === RIGHT_BRACE) {
@@ -595,6 +660,7 @@ function tokenizeOpaqueBlock(
     }
     if (code === null || isLineEnding(code)) return content(code);
     effects.consume(code);
+    previousCode = null;
     return content;
   }
 
@@ -618,7 +684,10 @@ function tokenizeOpaqueBlock(
     function body(code: Code): State | undefined {
       if (code === null) return no(code);
       if (isLineEnding(code)) {
-        if (probe) return no(code);
+        if (probe || heading) {
+          codeOpeningCrossedBoundary = heading;
+          return no(code);
+        }
         return check.check(continuationConstruct, line, blockedLine)(code);
       }
       if (code === BACKTICK) {
@@ -680,13 +749,81 @@ function tokenizeOpaqueBlock(
     yes: State,
     no: State
   ): State {
-    // Keep micromark's own HTML grammar, including quoted attributes and comments.
     if (!html) return no;
+    return nativeSpan.call(this, html, 'htmlText', check, yes, no);
+  }
+
+  function mathSpan(
+    this: FlowContext,
+    check: Effects,
+    yes: State,
+    no: State
+  ): State {
+    if (!math) return no;
+    let opening = true;
+    let trailingSize = 0;
+    // A complete run is tried only once, including when its first dollar was escaped.
+    const nativeContext = Object.create(this, { previous: { value: null } });
+    return nativeSpan.call(
+      nativeContext,
+      math,
+      'mathText',
+      {
+        ...check,
+        consume(code) {
+          if (opening && code === DOLLAR_SIGN) mathOpeningSize++;
+          else opening = false;
+          trailingSize = code === DOLLAR_SIGN ? trailingSize + 1 : 0;
+          check.consume(code);
+        },
+      },
+      yes,
+      no,
+      () => trailingSize === mathOpeningSize,
+      () => {
+        mathOpeningCrossedBoundary = true;
+      }
+    );
+  }
+
+  function linkResourceSpan(
+    this: FlowContext,
+    check: Effects,
+    yes: State,
+    no: State
+  ): State {
+    if (!labelEnd || !closingLabel) return no;
+    // The native label-end tokenizer owns resource destinations and titles. Its
+    // matching opening is tracked here because flow has not tokenized inline labels yet.
+    const nativeContext = Object.create(this, {
+      events: { value: [['enter', closingLabel]] },
+    });
+    return nativeSpan.call(nativeContext, labelEnd, 'resource', check, yes, no);
+  }
+
+  function nativeSpan(
+    this: FlowContext,
+    construct: Construct,
+    tokenType: string,
+    check: Effects,
+    yes: State,
+    no: State,
+    closesBeforeLineEnding: () => boolean = () => false,
+    onBoundary: () => void = () => undefined
+  ): State {
+    // Use the registered grammar, including HTML attributes, math options, and link titles.
     let closed = false;
     let done = false;
-    const state = html.tokenize.call(
+    const state = construct.tokenize.call(
       this,
-      {
+      tracedEffects(check),
+      complete,
+      failed
+    );
+    return withinParagraph(state);
+
+    function tracedEffects(check: Effects): Effects {
+      return {
         ...check,
         consume(code) {
           checkedSize++;
@@ -694,29 +831,51 @@ function tokenizeOpaqueBlock(
         },
         exit(type) {
           const token = check.exit(type);
-          if (type === 'htmlText') closed = true;
+          if (type === tokenType) closed = true;
           return token;
         },
-      },
-      code => {
-        done = true;
-        return yes(code);
-      },
-      code => {
-        done = true;
-        return no(code);
-      }
-    );
-    return withinParagraph(state);
+        attempt(construct, yes, no) {
+          return check.attempt(
+            {
+              ...construct,
+              tokenize(effects, yes, no) {
+                return construct.tokenize.call(
+                  this,
+                  tracedEffects(effects),
+                  yes,
+                  no
+                );
+              },
+            },
+            yes,
+            no
+          );
+        },
+      };
+    }
+
+    function complete(code: Code): State | undefined {
+      done = true;
+      return closed ? yes(code) : no(code);
+    }
+
+    function failed(code: Code): State | undefined {
+      done = true;
+      return no(code);
+    }
 
     function withinParagraph(state: State): State {
       return code => {
-        // htmlText normally sees only one paragraph. Flow lookahead must impose
+        // Inline constructs normally see only one paragraph. Flow lookahead must impose
         // the same boundary before passing it a blank line or a new flow block.
         // A closed HTML token still receives this code so its `ok` state can run.
-        if (!closed && isLineEnding(code)) {
-          if (probe) return no(code);
-          return check.check(continuationConstruct, advance, no)(code);
+        if (!closed && isLineEnding(code) && !closesBeforeLineEnding()) {
+          if (probe || heading) return boundary(code);
+          return check.check(
+            inlineContinuationConstruct,
+            advance,
+            boundary
+          )(code);
         }
         return advance(code);
 
@@ -726,11 +885,17 @@ function tokenizeOpaqueBlock(
         }
       };
     }
+
+    function boundary(code: Code): State | undefined {
+      onBoundary();
+      return no(code);
+    }
   }
 
   function skipChecked(code: Code): State | undefined {
     if (!checkedSize) return content(code);
     effects.consume(code);
+    previousCode = code;
     checkedSize--;
     brace = false;
     question = false;
@@ -748,8 +913,28 @@ function tokenizeOpaqueBlock(
 
   function skipCodeOpening(code: Code): State | undefined {
     if (!probe && codeOpeningCrossedBoundary)
-      rejectedCodeOpenings.add(codeOpeningOffset);
+      rejectedInlineOpenings.add(codeOpeningOffset);
     checkedSize = codeOpeningSize;
+    return skipChecked(code);
+  }
+
+  function skipMathOpening(code: Code): State | undefined {
+    if (!probe && mathOpeningCrossedBoundary)
+      rejectedInlineOpenings.add(mathOpeningOffset);
+    checkedSize = mathOpeningSize;
+    return skipChecked(code);
+  }
+
+  function skipLinkResource(code: Code): State | undefined {
+    if (closingLabel?.type === 'labelLink') {
+      for (let index = labels.length - 1; index >= 0; index--) {
+        const label = labels[index];
+        if (label.type !== 'labelLink') continue;
+        if (label.inactive) break;
+        label.inactive = true;
+      }
+    }
+    interaction = false;
     return skipChecked(code);
   }
 
@@ -799,7 +984,7 @@ function tokenizeOpaqueBlock(
       return headingEndTail;
     }
     effects.exit(MARKER);
-    retainLiteralCodeOpenings();
+    retainLiteralInlineOpenings();
     effects.exit(outerType);
     return ok(code);
   }
@@ -822,19 +1007,19 @@ function tokenizeOpaqueBlock(
   }
 
   function closeOuter(): void {
-    retainLiteralCodeOpenings();
+    retainLiteralInlineOpenings();
     if (!heading) effects.exit('paragraph');
     effects.exit(outerType);
   }
 
-  function retainLiteralCodeOpenings(): void {
-    if (probe || !rejectedCodeOpenings.size) return;
-    let openings = literalCodeOpenings.get(context.parser);
+  function retainLiteralInlineOpenings(): void {
+    if (probe || !rejectedInlineOpenings.size) return;
+    let openings = literalInlineOpenings.get(context.parser);
     if (!openings) {
       openings = new Set<number>();
-      literalCodeOpenings.set(context.parser, openings);
+      literalInlineOpenings.set(context.parser, openings);
     }
-    for (const opening of rejectedCodeOpenings) openings.add(opening);
+    for (const opening of rejectedInlineOpenings) openings.add(opening);
   }
 
   function finish(code: Code): State | undefined {
@@ -846,6 +1031,7 @@ function tokenizeOpaqueBlock(
 
   function continueLine(code: Code): State | undefined {
     effects.consume(code);
+    previousCode = null;
     effects.exit('chunkText');
     return nextLine;
   }
@@ -867,6 +1053,21 @@ function tokenizeOpaqueBlock(
         yes,
         check.interrupt(interruptFlow, no, yes)
       )(code);
+    }
+  }
+
+  function inlineContinuation(check: Effects, yes: State, no: State): State {
+    // A native inline state may have just exited a token and still need this
+    // character to finish. Give the speculative boundary check its own token.
+    return code => {
+      check.enter(DATA);
+      return continuation(check, finish(yes), finish(no))(code);
+    };
+    function finish(next: State): State {
+      return code => {
+        check.exit(DATA);
+        return next(code);
+      };
     }
   }
 
@@ -902,7 +1103,12 @@ export function interactionSyntax(): Record<string, unknown> {
       [BACKTICK]: {
         name: 'flowLiteralCodeOpening',
         previous: previousLiteralCodeOpening,
-        tokenize: tokenizeLiteralCodeOpening,
+        tokenize: tokenizeLiteralInlineOpening,
+      },
+      [DOLLAR_SIGN]: {
+        name: 'flowLiteralMathOpening',
+        previous: previousLiteralMathOpening,
+        tokenize: tokenizeLiteralInlineOpening,
       },
       [QUESTION_MARK]: {
         name: 'flowInteraction',

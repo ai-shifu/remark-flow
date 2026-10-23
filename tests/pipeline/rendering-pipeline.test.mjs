@@ -895,6 +895,104 @@ test('HTML-looking link titles do not extend lookahead into a later Markdown blo
   }
 });
 
+test('native math and link resources keep marker examples within their inline context', () => {
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+  ];
+  const prefixes = [
+    '$x {{ y$',
+    '$$x {{ y$$',
+    'Math $x\n{{ y$',
+    String.raw`\$$x {{ y$`,
+    '[x](url "{{")',
+    "[x](url '{{')",
+    '[x](url ({{))',
+    '[x](<{{>)',
+    String.raw`[x](url "first\" {{")`,
+    '[x](url "first\n{{")',
+    '![x](url "{{")',
+    '[outer ![inner](url)](url "{{")',
+    '![outer [inner](url "{{")](url)',
+    String.raw`\[brackets] [x](url "{{")`,
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const prefix of prefixes) {
+      for (const wrap of containers) {
+        for (const suffix of [
+          '\n\n# Heading',
+          '\n```js\ncode\n```',
+          '\n\nAfter',
+        ]) {
+          const source = wrap(`${prefix}${suffix}`);
+          const native = unified()
+            .use(remarkParse)
+            .use(remarkGfm)
+            .use(remarkMath)
+            .use(remarkBreaks);
+          const expected = native.runSync(
+            native.parse(source),
+            source
+          ).children;
+          for (const value of [
+            source,
+            Buffer.from(source),
+            new TextEncoder().encode(source),
+          ]) {
+            assert.deepEqual(
+              render({ value }, plugin).children,
+              expected,
+              source
+            );
+          }
+        }
+        const source = wrap(`${prefix}\n\n?[%{{ q }} A|B]`);
+        assert.equal(only(source, plugin).variableName, 'q', source);
+        const multiline = wrap(
+          `${prefix} ?[%{{\n\u0060\u0060\u0060key\n}} A|B]`
+        );
+        assert.equal(
+          only(multiline, plugin).variableName,
+          '\u0060\u0060\u0060key',
+          multiline
+        );
+      }
+    }
+    // Math and resources encountered after a true marker opener remain opaque key text.
+    for (const name of ['$x', '[x](url "literal")', 'price $[x](url)']) {
+      assert.equal(only(`?[%{{\n${name}\n}} A|B]`, plugin).variableName, name);
+    }
+    // An unsuccessful resource does not hide its real, unclosed outside marker.
+    for (const source of [
+      '[x](url "{{\n\n?[A|B]',
+      '[outer [inner](url)](url "{{")\n\n?[A|B]',
+      'Math ${{\n\n$ then ?[%{{ q }} A|B]',
+      'Math $${{\n\n$$ then ?[%{{ q }} A|B]',
+      'Unmatched $$$ {{\n\n?[A|B]',
+    ]) {
+      assert.equal(interactions(render(source, plugin)).length, 0, source);
+    }
+    for (const delimiter of ['`', '$', '$$']) {
+      const source = `# Heading ${delimiter}{{\nq${delimiter} }} ?[A|B]`;
+      const tree = render(source, plugin);
+      assert.equal(tree.children[0].type, 'heading', source);
+      assert.equal(tree.children.length, 1, source);
+      assert.equal(interactions(tree).length, 1, source);
+      assert.ok(!JSON.stringify(tree).includes('"type":"inlineCode"'), source);
+      assert.ok(!JSON.stringify(tree).includes('"type":"inlineMath"'), source);
+    }
+  }
+});
+
 test('unmatched code openings cannot pair across a paragraph or fence through an opaque marker', () => {
   const containers = [
     value => value,
