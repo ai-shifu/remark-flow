@@ -88,5 +88,5 @@
     "test:watch": "jest --watch"
   },
   "types": "dist/index.d.ts",
-  "version": "1.4.0-dev.1"
+  "version": "1.4.0"
 }
