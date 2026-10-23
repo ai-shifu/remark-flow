@@ -167,28 +167,66 @@ function htmlLiteralEnd(
   }
 }
 
+/** Consume virtual whitespace columns while keeping the original UTF-16 offset. */
+function consumeContainerPadding(
+  line: string,
+  position: ContainerPosition,
+  maximum: number
+): number {
+  let consumed = 0;
+  while (consumed < maximum) {
+    if (!position.virtualPadding) {
+      const character = line[position.offset];
+      if (character !== ' ' && character !== '\t') break;
+      const width = character === '\t' ? 4 - (position.column % 4) : 1;
+      position.offset++;
+      position.column += width;
+      position.virtualPadding = width;
+    }
+    const width = Math.min(maximum - consumed, position.virtualPadding);
+    position.virtualPadding -= width;
+    consumed += width;
+  }
+  return consumed;
+}
+
+/** Four columns suffice to distinguish native indented code from inline content. */
+function contentIndentColumns(
+  line: string,
+  position: ContainerPosition
+): number {
+  return consumeContainerPadding(line, { ...position }, 4);
+}
+
 /** Bound indented code to its last nonblank indented line, leaving trailing blanks outside. */
 function indentedCodeEnd(
   text: string,
   lines: DocumentLines,
   index: number,
-  followsBlock: boolean
+  followsBlock: boolean,
+  firstPosition: ContainerPosition,
+  steps: readonly ContainerStep[] = []
 ): number | null {
   if (index > 0 && !followsBlock) return null;
   let lastContentEnd: number | null = null;
+  const firstIndex = index;
   for (; index < lines.length; index++) {
     const { start, contentEnd } = lines.at(index);
     const line = text.slice(start, contentEnd);
-    if (/^[\t ]*$/.test(line)) {
+    const position =
+      index === firstIndex
+        ? firstPosition
+        : containerContentPosition(line, steps);
+    if (position === null) {
+      if (!steps.some(step => 'quote' in step) && /^[\t ]*$/.test(line))
+        continue;
+      return lastContentEnd;
+    }
+    const content = line.slice(position.offset);
+    if (/^[\t ]*$/.test(content)) {
       if (lastContentEnd === null) return null;
     } else {
-      let columns = 0;
-      for (const character of line) {
-        if (columns >= 4) break;
-        if (character === ' ') columns++;
-        else if (character === '\t') columns += 4 - (columns % 4);
-        else break;
-      }
+      const columns = contentIndentColumns(line, position);
       if (columns < 4) return lastContentEnd;
       lastContentEnd = contentEnd;
     }
@@ -475,7 +513,7 @@ function inlineLiteralSpans(
         )
     );
     const content = line.slice(projected.contentStart);
-    if (ATX_HEADING_LINE.test(content)) {
+    if (projected.indentation < 4 && ATX_HEADING_LINE.test(content)) {
       indexSegment(segmentStart, start);
       indexSegment(start, contentEnd);
       segmentStart = end;
@@ -487,8 +525,9 @@ function inlineLiteralSpans(
       segmentStart = start;
       container = projected.steps;
     } else if (
-      isInlineCodeBoundaryLine(content) ||
-      rawHtmlOpening(text, start + projected.contentStart, missingClosers)
+      (projected.indentation < 4 || /^[\t ]*$/.test(content)) &&
+      (isInlineCodeBoundaryLine(content) ||
+        rawHtmlOpening(text, start + projected.contentStart, missingClosers))
     ) {
       indexSegment(segmentStart, start);
       segmentStart = end;
@@ -555,23 +594,39 @@ function inlineLiteralSpans(
 }
 
 type ContainerStep = { quote: true } | { indent: number };
+interface ContainerPosition {
+  offset: number;
+  column: number;
+  virtualPadding: number;
+}
 
 /** Reuse native container continuation before looking for a nested block opening. */
 function projectedContainerLine(
   line: string,
   active: ContainerStep[],
   startsBlock: boolean
-): { contentStart: number; steps: ContainerStep[]; entered: boolean } {
-  const continued = containerContentStart(line, active);
-  const base = continued ?? 0;
-  const remainder = line.slice(base);
-  const nested = containerOpening(remainder);
+): {
+  contentStart: number;
+  position: ContainerPosition;
+  indentation: number;
+  steps: ContainerStep[];
+  entered: boolean;
+} {
+  const continued = containerContentPosition(line, active);
+  const base = continued ?? { offset: 0, column: 0, virtualPadding: 0 };
+  const remainder = line.slice(base.offset);
+  const nested = containerOpening(line, base);
   const entered =
     nested.steps.length > 0 &&
     !THEMATIC_BREAK_LINE.test(remainder) &&
     (startsBlock || CONTAINER_INTERRUPT_LINE.test(remainder));
+  const position = entered ? nested.position : base;
+  const blockMarker = { ...position };
+  consumeContainerPadding(line, blockMarker, 3);
   return {
-    contentStart: base + (entered ? nested.contentStart : 0),
+    contentStart: blockMarker.offset,
+    position,
+    indentation: contentIndentColumns(line, position),
     steps: entered
       ? [...(continued === null ? [] : active), ...nested.steps]
       : continued === null
@@ -603,78 +658,101 @@ function containerBlockEnd(
 }
 
 /** Read quote/list steps without rewriting the original text or source offsets. */
-function containerOpening(line: string): {
-  contentStart: number;
-  steps: ContainerStep[];
-} {
-  let cursor = 0;
+function containerOpening(
+  line: string,
+  initial: ContainerPosition
+): { position: ContainerPosition; steps: ContainerStep[] } {
+  let position = { ...initial };
   const steps: ContainerStep[] = [];
   for (;;) {
-    const beforeSpace = cursor;
-    while (cursor - beforeSpace < 3 && line[cursor] === ' ') cursor++;
-    if (line[cursor] === '>') {
+    const beforeSpace = { ...position };
+    const leading = consumeContainerPadding(line, position, 3);
+    if (!position.virtualPadding && line[position.offset] === '>') {
       steps.push({ quote: true });
-      cursor++;
-      if (line[cursor] === ' ' || line[cursor] === '\t') cursor++;
+      position.offset++;
+      position.column++;
+      consumeContainerPadding(line, position, 1);
       continue;
     }
-    const list = /^(?:[-+*]|\d{1,9}[.)])(?=[ \t])/.exec(line.slice(cursor));
+    const list = position.virtualPadding
+      ? null
+      : /^(?:[-+*]|\d{1,9}[.)])(?=[ \t])/.exec(line.slice(position.offset));
     if (list) {
-      cursor += list[0].length;
-      const paddingStart = cursor;
-      while (line[cursor] === ' ' || line[cursor] === '\t') cursor++;
-      if (cursor - paddingStart > 4) cursor = paddingStart + 1;
-      let columns = 0;
-      for (const character of line.slice(beforeSpace, cursor))
-        columns += character === '\t' ? 4 - (columns % 4) : 1;
-      steps.push({ indent: columns });
+      position.offset += list[0].length;
+      position.column += list[0].length;
+      const afterMarker = { ...position };
+      let padding = consumeContainerPadding(line, position, 5);
+      if (padding > 4) {
+        position = afterMarker;
+        padding = consumeContainerPadding(line, position, 1);
+      }
+      steps.push({ indent: leading + list[0].length + padding });
       continue;
     }
-    return { contentStart: cursor, steps };
+    return { position: beforeSpace, steps };
   }
 }
 
 function fenceOpening(
-  line: string
+  line: string,
+  position: ContainerPosition,
+  steps: ContainerStep[]
 ): { marker: string; size: number; steps: ContainerStep[] } | null {
-  const { contentStart, steps } = containerOpening(line);
-  const fence = /^(`{3,})([^`]*$)|^(~{3,})(.*$)/.exec(line.slice(contentStart));
+  if (contentIndentColumns(line, position) >= 4) return null;
+  const marker = { ...position };
+  consumeContainerPadding(line, marker, 3);
+  const fence = /^(`{3,})([^`]*$)|^(~{3,})(.*$)/.exec(
+    line.slice(marker.offset)
+  );
   const run = fence?.[1] ?? fence?.[3];
   return run ? { marker: run[0], size: run.length, steps } : null;
+}
+
+function containerContentPosition(
+  line: string,
+  steps: readonly ContainerStep[]
+): ContainerPosition | null {
+  const position = { offset: 0, column: 0, virtualPadding: 0 };
+  for (let index = 0; index < steps.length; index++) {
+    const step = steps[index];
+    if ('quote' in step) {
+      consumeContainerPadding(line, position, 3);
+      if (position.virtualPadding || line[position.offset] !== '>') return null;
+      position.offset++;
+      position.column++;
+      consumeContainerPadding(line, position, 1);
+    } else if (
+      consumeContainerPadding(line, position, step.indent) < step.indent
+    ) {
+      // Empty lines can omit list padding while still continuing their enclosing quotes.
+      return /^[\t ]*$/.test(line.slice(position.offset)) &&
+        !steps.slice(index + 1).some(next => 'quote' in next)
+        ? position
+        : null;
+    }
+  }
+  return position;
 }
 
 function containerContentStart(
   line: string,
   steps: readonly ContainerStep[]
 ): number | null {
-  let cursor = 0;
-  for (const step of steps) {
-    if ('quote' in step) {
-      const beforeSpace = cursor;
-      while (cursor - beforeSpace < 3 && line[cursor] === ' ') cursor++;
-      if (line[cursor++] !== '>') return null;
-      if (line[cursor] === ' ' || line[cursor] === '\t') cursor++;
-    } else {
-      let columns = 0;
-      while (columns < step.indent) {
-        if (line[cursor] === ' ') columns++;
-        else if (line[cursor] === '\t') columns += 4 - (columns % 4);
-        else return null;
-        cursor++;
-      }
-    }
-  }
-  return cursor;
+  return containerContentPosition(line, steps)?.offset ?? null;
 }
 
 function fencedCodeSpan(
   text: string,
   lines: DocumentLines,
-  index: number
+  index: number,
+  position: ContainerPosition,
+  steps: ContainerStep[]
 ): LiteralSpan | null {
   const openingLine = lines.at(index);
   const opening = fenceOpening(
-    text.slice(openingLine.start, openingLine.contentEnd)
+    text.slice(openingLine.start, openingLine.contentEnd),
+    position,
+    steps
   );
   if (!opening) return null;
   const closing = new RegExp(
@@ -683,8 +761,8 @@ function fencedCodeSpan(
   for (let at = index + 1; at < lines.length; at++) {
     const line = lines.at(at);
     const value = text.slice(line.start, line.contentEnd);
-    const contentStart = containerContentStart(value, opening.steps);
-    if (contentStart === null) {
+    const contentPosition = containerContentPosition(value, opening.steps);
+    if (contentPosition === null) {
       if (/^[\t ]*$/.test(value)) continue;
       return {
         bodyStart: openingLine.end,
@@ -692,7 +770,12 @@ function fencedCodeSpan(
         end: line.start,
       };
     }
-    if (closing.test(value.slice(contentStart)))
+    const marker = { ...contentPosition };
+    consumeContainerPadding(value, marker, 3);
+    if (
+      contentIndentColumns(value, contentPosition) < 4 &&
+      closing.test(value.slice(marker.offset))
+    )
       return {
         bodyStart: openingLine.end,
         bodyEnd: line.start,
@@ -823,13 +906,23 @@ const scanDocumentVariableMarkers = (
       const previousText = previous
         ? text.slice(previous.start, previous.contentEnd)
         : '';
-      const previousStart = containerContentStart(previousText, container);
-      const previousContent = previousText.slice(previousStart ?? 0);
+      const previousPosition = containerContentPosition(
+        previousText,
+        container
+      );
+      const previousMarker = {
+        ...(previousPosition ?? { offset: 0, column: 0, virtualPadding: 0 }),
+      };
+      consumeContainerPadding(previousText, previousMarker, 3);
+      const previousContent = previousText.slice(previousMarker.offset);
+      const previousIndented =
+        previousPosition !== null &&
+        contentIndentColumns(previousText, previousPosition) >= 4;
       const followsBlock =
         !previous ||
         /^[\t ]*$/.test(previousContent) ||
-        ATX_HEADING_LINE.test(previousContent) ||
-        THEMATIC_BREAK_LINE.test(previousContent) ||
+        (!previousIndented && ATX_HEADING_LINE.test(previousContent)) ||
+        (!previousIndented && THEMATIC_BREAK_LINE.test(previousContent)) ||
         previous.contentEnd === blockEndedAt;
       const projected = projectedContainerLine(
         text.slice(current.start, current.contentEnd),
@@ -864,7 +957,7 @@ const scanDocumentVariableMarkers = (
       };
       const contentStart = current.start + projected.contentStart;
       const definitionEnd =
-        followsBlock || projected.entered
+        projected.indentation < 4 && (followsBlock || projected.entered)
           ? referenceDefinitionEnd(
               text,
               lines,
@@ -887,26 +980,36 @@ const scanDocumentVariableMarkers = (
         labels.length = 0;
         activeLinkLabels.clear();
       }
-      const fence = fencedCodeSpan(text, lines, lineIndex);
+      const fence = fencedCodeSpan(
+        text,
+        lines,
+        lineIndex,
+        projected.position,
+        container
+      );
       if (fence) {
         collectLiteral(cursor, fence.bodyEnd);
         blockEndedAt = fence.end;
         cursor = fence.end;
         continue;
       }
-      const indentedEnd = indentedCodeEnd(text, lines, lineIndex, followsBlock);
+      const indentedEnd = indentedCodeEnd(
+        text,
+        lines,
+        lineIndex,
+        followsBlock || projected.entered,
+        projected.position,
+        container
+      );
       if (indentedEnd !== null) {
         collectLiteral(cursor, indentedEnd);
         cursor = indentedEnd;
         continue;
       }
-      const rawHtml = rawHtmlSpan(
-        text,
-        contentStart,
-        missingHtmlClosers,
-        lines,
-        blockEnd
-      );
+      const rawHtml =
+        projected.indentation < 4
+          ? rawHtmlSpan(text, contentStart, missingHtmlClosers, lines, blockEnd)
+          : null;
       if (rawHtml) {
         collectLiteral(cursor, rawHtml.bodyStart);
         collectLiteral(rawHtml.bodyStart, rawHtml.bodyEnd);
@@ -914,13 +1017,16 @@ const scanDocumentVariableMarkers = (
         cursor = rawHtml.end;
         continue;
       }
-      const terminatedHtml = terminatedHtmlBlockSpan(
-        text,
-        contentStart,
-        missingHtmlClosers,
-        lines,
-        blockEnd
-      );
+      const terminatedHtml =
+        projected.indentation < 4
+          ? terminatedHtmlBlockSpan(
+              text,
+              contentStart,
+              missingHtmlClosers,
+              lines,
+              blockEnd
+            )
+          : null;
       if (terminatedHtml) {
         collectLiteral(cursor, terminatedHtml.bodyStart);
         collectLiteral(terminatedHtml.bodyStart, terminatedHtml.bodyEnd);
@@ -928,15 +1034,18 @@ const scanDocumentVariableMarkers = (
         cursor = terminatedHtml.end;
         continue;
       }
-      const html = ordinaryHtmlSpan(
-        text,
-        lines,
-        lineIndex,
-        missingHtmlClosers,
-        contentStart,
-        container,
-        blockEnd
-      );
+      const html =
+        projected.indentation < 4
+          ? ordinaryHtmlSpan(
+              text,
+              lines,
+              lineIndex,
+              missingHtmlClosers,
+              contentStart,
+              container,
+              blockEnd
+            )
+          : null;
       if (html) {
         collectLiteral(cursor, html.bodyStart);
         collectLiteral(html.bodyStart, html.bodyEnd);
@@ -975,7 +1084,8 @@ const scanDocumentVariableMarkers = (
           const projected = projectedContainerLine(value, container, false);
           return (
             projected.entered ||
-            isInlineCodeBoundaryLine(value.slice(projected.contentStart))
+            (projected.indentation < 4 &&
+              isInlineCodeBoundaryLine(value.slice(projected.contentStart)))
           );
         })
       : null;

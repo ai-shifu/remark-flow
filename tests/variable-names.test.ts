@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import {
   createVariableExpressionRegex,
   extractVariableNames,
@@ -1020,3 +1022,75 @@ describe('container document contexts', () => {
     expect(extractVariableNames(`${prefix}\n${outside}`)).toEqual(['real']);
   });
 });
+
+describe('projected container code blocks', () => {
+  test.each(['\n', '\r\n', '\r'])('keeps code boundaries in %j source', eol => {
+    const outside = '?[%{{ real }} A|B]';
+    for (const prefix of [
+      '>     {{ unfinished',
+      '> >     {{ unfinished',
+      '>\t  {{ unfinished',
+      '> \t  {{ unfinished',
+      '-     {{ unfinished',
+      '- Intro\n\n      {{ unfinished',
+      '2. Intro\n\n       {{ unfinished',
+      '>     {{ unfinished\n>\n>     still code',
+      '- Intro\n\n    ```\n  {{ unfinished\n    ```',
+      '2. Intro\n\n    ~~~\n   {{ unfinished\n    ~~~',
+      '> \t~~~\n> {{ unfinished\n> \t~~~',
+      '> \t```\n> {{ unfinished\n> \t```',
+      '- Intro\n\n\t~~~\n  {{ unfinished\n\t~~~',
+    ]) {
+      const source = `${prefix}\n\n${outside}`.replace(/\n/g, eol);
+      expect(extractVariableNames(source)).toEqual(['real']);
+      const markers = findDocumentVariableMarkers(source);
+      const real = markers[markers.length - 1];
+      expect(source.slice(real.start, real.end)).toBe('{{ real }}');
+      expect(markers[0].name).toBeNull();
+      expect(markers[0].end).toBeLessThan(real.start);
+    }
+    for (const prefix of [
+      '> \t{{ unfinished',
+      '> Intro\n>     {{ unfinished',
+      'Paragraph\n    {{ unfinished',
+      '>     ```\n> {{ unfinished\n>     ```',
+    ]) {
+      const source = `${prefix}\n\n${outside}`.replace(/\n/g, eol);
+      expect(extractVariableNames(source)).toEqual([]);
+    }
+    for (const source of [
+      '>     {{ unfinished\n> ?[%{{ real }} A|B]',
+      '-     {{ unfinished\n?[%{{ real }} A|B]',
+      '>     {{ complete }}\n>\n>     {{ unfinished\n\n?[%{{ real }} A|B]',
+    ]) {
+      const original = source.replace(/\n/g, eol);
+      expect(extractVariableNames(original)).toEqual(
+        source.includes('{{ complete }}') ? ['complete', 'real'] : ['real']
+      );
+    }
+  });
+});
+
+const containerTabCases: {
+  id: string;
+  source: string;
+  names: string[];
+}[] = JSON.parse(
+  readFileSync(
+    path.join(process.cwd(), 'tests/fixtures/container-tab-cases.json'),
+    'utf8'
+  )
+);
+test.each(containerTabCases)(
+  'matches native four-column container indentation: $id',
+  ({ source, names }) => {
+    for (const eol of ['\n', '\r\n', '\r']) {
+      const original = source.replace(/\n/g, eol);
+      expect(extractVariableNames(original)).toEqual(names);
+      const markers = findDocumentVariableMarkers(original);
+      for (const marker of markers) {
+        expect(original.slice(marker.start, marker.start + 2)).toBe('{{');
+      }
+    }
+  }
+);

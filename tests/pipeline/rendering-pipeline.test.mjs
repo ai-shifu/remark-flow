@@ -1556,3 +1556,103 @@ test('container projection keeps document metadata aligned with the rendered con
     }
   }
 });
+
+test('container code blocks and HTML recognizers use the same original-source projection', () => {
+  const outside = '?[%{{ real }} A|B]';
+  const cases = [
+    ['>     {{ unfinished', ['real'], 1],
+    ['> >     {{ unfinished', ['real'], 1],
+    ['>\t  {{ unfinished', ['real'], 1],
+    ['> \t  {{ unfinished', ['real'], 1],
+    ['-     {{ unfinished', ['real'], 1],
+    ['- Intro\n\n      {{ unfinished', ['real'], 1],
+    ['2. Intro\n\n       {{ unfinished', ['real'], 1],
+    ['>     {{ unfinished\n>\n>     still code', ['real'], 1],
+    ['- Intro\n\n    ```\n  {{ unfinished\n    ```', ['real'], 1],
+    ['2. Intro\n\n    ~~~\n   {{ unfinished\n    ~~~', ['real'], 1],
+    ['> \t~~~\n> {{ unfinished\n> \t~~~', ['real'], 1],
+    ['> \t```\n> {{ unfinished\n> \t```', ['real'], 1],
+    ['- Intro\n\n\t~~~\n  {{ unfinished\n\t~~~', ['real'], 1],
+    ['> \t{{ unfinished', [], 0],
+    ['> Intro\n>     {{ unfinished', [], 0],
+    ['Paragraph\n    {{ unfinished', [], 0],
+    ['>     ```\n> {{ unfinished\n>     ```', [], 0],
+  ];
+  for (const [first, rest] of [
+    ['> ', '> '],
+    ['> \t', '> '],
+    ['- ', '  '],
+    ['> - ', '>   '],
+  ]) {
+    for (const [opening, closing] of [
+      ['<div>', '</div>'],
+      ['<script>', '</script>'],
+      ['<style>', '</style>'],
+      ['<pre>', '</pre>'],
+      ['<textarea>', '</textarea>'],
+      ['<!--', '-->'],
+      ['<?x', '?>'],
+      ['<![CDATA[', ']]>'],
+      ['<!DOCTYPE', '>'],
+    ])
+      cases.push([
+        `${first}${opening}\n${rest}{{ unfinished\n${rest}${closing}`,
+        ['real'],
+        1,
+      ]);
+  }
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const [prefix, names, count] of cases) {
+      for (const eol of ['\n', '\r\n', '\r']) {
+        const source = `${prefix}\n\n${outside}`.replaceAll('\n', eol);
+        assert.deepEqual(extractVariableNames(source), names, source);
+        for (const value of [source, Buffer.from(source)]) {
+          const found = interactions(render({ value }, plugin));
+          assert.equal(found.length, count, source);
+          if (found.length) {
+            assert.equal(found[0].variableName, 'real', source);
+            assert.deepEqual(found[0].buttonTexts, ['A', 'B'], source);
+          }
+        }
+      }
+    }
+  }
+});
+
+test('physical tab stops retain code versus paragraph semantics in mixed containers', () => {
+  const cases = JSON.parse(
+    readFileSync(
+      new URL('../fixtures/container-tab-cases.json', import.meta.url),
+      'utf8'
+    )
+  );
+  for (const item of cases) {
+    const native = unified().use(remarkParse).parse(item.source);
+    let codeExample = false;
+    const walk = node => {
+      if (node.type === 'code' && node.value.includes('{{ unfinished'))
+        codeExample = true;
+      (node.children ?? []).forEach(walk);
+    };
+    walk(native);
+    assert.deepEqual(item.names, codeExample ? ['real'] : [], item.id);
+    for (const plugin of [
+      remarkFlow,
+      remarkInteraction,
+      remarkCustomVariable,
+    ]) {
+      for (const eol of ['\n', '\r\n', '\r']) {
+        const source = item.source.replaceAll('\n', eol);
+        assert.deepEqual(extractVariableNames(source), item.names, item.id);
+        const controls = interactions(
+          render({ value: Buffer.from(source) }, plugin)
+        );
+        assert.deepEqual(
+          controls.map(control => control.variableName),
+          item.names,
+          item.id
+        );
+      }
+    }
+  }
+});
