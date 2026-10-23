@@ -1148,6 +1148,34 @@ test('document block examples cannot hide later rendered variable questions', ()
   }
 });
 
+test('terminated HTML blocks keep unfinished closing-line examples local', () => {
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const [open, close] of [
+      ['<!--', '-->'],
+      ['<?x', '?>'],
+      ['<![CDATA[', ']]>'],
+      ['<!DOCTYPE', '>'],
+    ]) {
+      for (const eol of ['\n', '\r\n', '\r']) {
+        const prefix = `${open}${eol}{{ unfinished${eol}${close} {{ still literal`;
+        const source = `${prefix}${eol}?[%{{ real }} A|B]`;
+        assert.deepEqual(extractVariableNames(source), ['real'], source);
+        for (const value of [source, Buffer.from(source)]) {
+          const tree = render({ value }, plugin);
+          assert.equal(tree.children[0].type, 'html', source);
+          assert.equal(interactions(tree).length, 1, source);
+          assert.equal(interactions(tree)[0].variableName, 'real', source);
+          assert.deepEqual(
+            interactions(tree)[0].buttonTexts,
+            ['A', 'B'],
+            source
+          );
+        }
+      }
+    }
+  }
+});
+
 test('unmatched code openings cannot pair across a paragraph or fence through an opaque marker', () => {
   const containers = [
     value => value,

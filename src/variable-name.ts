@@ -230,6 +230,27 @@ function rawHtmlSpan(
   return { bodyStart: opening.end, bodyEnd: end, end };
 }
 
+/** Comments, instructions, declarations and CDATA keep their whole closing line literal. */
+function terminatedHtmlBlockSpan(
+  text: string,
+  start: number,
+  missingClosers: Map<string, number>,
+  lines: DocumentLines
+): LiteralSpan | null {
+  const opening = /^ {0,3}<(?:!--|\?|!\[CDATA\[|![A-Z])/.exec(
+    text.slice(start, start + 12)
+  );
+  if (!opening) return null;
+  const tokenEnd = htmlLiteralEnd(
+    text,
+    start + opening[0].indexOf('<'),
+    missingClosers
+  );
+  if (tokenEnd === null) return null;
+  const end = lines.at(containingLine(lines, tokenEnd)).contentEnd;
+  return { bodyStart: tokenEnd, bodyEnd: end, end };
+}
+
 /** A blank line ends complete inline resources and inline math/code paragraphs. */
 function blankLineAfter(text: string, cursor: number): boolean {
   if (text[cursor] !== '\n' && text[cursor] !== '\r') return false;
@@ -741,6 +762,18 @@ const scanDocumentVariableMarkers = (
         collectLiteral(cursor, rawHtml.bodyStart);
         collectLiteral(rawHtml.bodyStart, rawHtml.bodyEnd);
         cursor = rawHtml.end;
+        continue;
+      }
+      const terminatedHtml = terminatedHtmlBlockSpan(
+        text,
+        cursor,
+        missingHtmlClosers,
+        lines
+      );
+      if (terminatedHtml) {
+        collectLiteral(cursor, terminatedHtml.bodyStart);
+        collectLiteral(terminatedHtml.bodyStart, terminatedHtml.bodyEnd);
+        cursor = terminatedHtml.end;
         continue;
       }
       const html = ordinaryHtmlSpan(text, lines, lineIndex, missingHtmlClosers);

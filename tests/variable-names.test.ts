@@ -494,6 +494,41 @@ describe('malformed HTML closing searches', () => {
 });
 
 describe('document block literal boundaries', () => {
+  test.each([
+    ['<!--', '-->'],
+    ['<?x', '?>'],
+    ['<![CDATA[', ']]>'],
+    ['<!DOCTYPE', '>'],
+  ])('bounds %s examples through the physical closing line', (open, close) => {
+    for (const eol of ['\n', '\r\n', '\r']) {
+      for (const indent of ['', '   ']) {
+        const prefix = `${indent}${open}${eol}{{ unfinished${eol}${close} {{ still literal`;
+        const source = `${prefix}${eol}?[%{{ real }} A|B]`;
+        expect(extractVariableNames(source)).toEqual(['real']);
+        const markers = findDocumentVariableMarkers(source);
+        expect(markers.map(marker => marker.name)).toEqual([
+          null,
+          null,
+          'real',
+        ]);
+        expect(markers[1].end).toBe(prefix.length);
+        expect(source.slice(markers[2].start, markers[2].end)).toBe(
+          '{{ real }}'
+        );
+        expect(
+          extractVariableNames(
+            `${indent}${open} {{ example }} ${close} {{ closing }}${eol}{{ real }}`
+          )
+        ).toEqual(['example', 'closing', 'real']);
+      }
+      expect(
+        extractVariableNames(
+          `Text ${open}${close} {{ unfinished${eol}{{ real }}`
+        )
+      ).toEqual([]);
+    }
+  });
+
   test.each(['    ', '\t', ' \t', '  \t', '   \t'])(
     'bounds an incomplete indented example after %j',
     indentation => {
