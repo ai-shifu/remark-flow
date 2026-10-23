@@ -492,3 +492,78 @@ describe('malformed HTML closing searches', () => {
     ).toEqual(['attribute', 'outside']);
   });
 });
+
+describe('document block literal boundaries', () => {
+  test.each(['    ', '\t', ' \t', '  \t', '   \t'])(
+    'bounds an incomplete indented example after %j',
+    indentation => {
+      const prefix = `${indentation}{{ unfinished`;
+      for (const ending of ['{{ real }}', '?[%{{ real }} A|B]']) {
+        const source = `${prefix}\n\n${ending}`;
+        expect(extractVariableNames(source)).toEqual(['real']);
+        expect(findDocumentVariableMarkers(source)[0]).toMatchObject({
+          start: indentation.length,
+          end: prefix.length,
+          name: null,
+        });
+      }
+    }
+  );
+
+  test('includes interior blank code lines while leaving trailing blanks outside', () => {
+    const source = '    {{ example }}\n\n    {{ complete }}\n\n{{ real }}';
+    expect(extractVariableNames(source)).toEqual([
+      'example',
+      'complete',
+      'real',
+    ]);
+    expect(
+      extractVariableNames('Paragraph\n    {{ unfinished\n\n{{ real }}')
+    ).toEqual([]);
+  });
+
+  test.each(['script', 'style', 'pre', 'textarea'])(
+    'bounds an incomplete raw %s body at its matching closing token',
+    name => {
+      const prefix = `  <${name} title="{{ attribute }}">\n{{ unfinished\n</${name.toUpperCase()} >`;
+      for (const ending of ['{{ real }}', '?[%{{ real }} A|B]']) {
+        const source = `${prefix}\n${ending}`;
+        expect(extractVariableNames(source)).toEqual(['attribute', 'real']);
+        expect(findDocumentVariableMarkers(source)[1]).toMatchObject({
+          end: prefix.length,
+          name: null,
+        });
+      }
+      expect(
+        extractVariableNames(`<${name}>{{ example }}</${name}>{{ real }}`)
+      ).toEqual(['example', 'real']);
+      expect(extractVariableNames(`<${name}>{{ unfinished`)).toEqual([]);
+    }
+  );
+
+  test('keeps raw HTML attribute examples in their existing opening-token scope', () => {
+    expect(
+      extractVariableNames('<script title="{{">{{ body }}</script>{{ real }}')
+    ).toEqual(['body', 'real']);
+    expect(
+      extractVariableNames('<script/>{{ unfinished\n</script>\n{{ real }}')
+    ).toEqual([]);
+    expect(extractVariableNames('{{ <script> name }}')).toEqual([
+      '<script> name',
+    ]);
+  });
+
+  test.each(['\u0060\u0060\u0060', '~~~'])(
+    'preserves complete names in %s info strings without reclaiming a later fence',
+    fence => {
+      expect(extractVariableNames(`${fence}{{language}}\nx\n${fence}`)).toEqual(
+        ['language']
+      );
+      for (const ending of ['', '\n']) {
+        const source = `${fence}\nexample\n${fence}\n{{ unfinished\n${fence}\nexample\n${fence}\n{{ real }}${ending}`;
+        expect(extractVariableNames(source)).toEqual([]);
+        expect(findDocumentVariableMarkers(source)).toHaveLength(1);
+      }
+    }
+  );
+});

@@ -993,6 +993,31 @@ test('native math and link resources keep marker examples within their inline co
   }
 });
 
+test('document block examples cannot hide later rendered variable questions', () => {
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const source of [
+      '    {{ unfinished\n\n?[%{{ real }} A|B]',
+      '\t{{ unfinished\n\n?[%{{ real }} A|B]',
+      '<script>\n{{ unfinished\n</SCRIPT>\n?[%{{ real }} A|B]',
+      '<style>\n{{ unfinished\n</style>\n?[%{{ real }} A|B]',
+      '<pre>\n{{ unfinished\n</pre>\n?[%{{ real }} A|B]',
+      '<textarea>\n{{ unfinished\n</textarea>\n?[%{{ real }} A|B]',
+    ]) {
+      assert.deepEqual(extractVariableNames(source), ['real'], source);
+      for (const value of [
+        source,
+        Buffer.from(source),
+        new TextEncoder().encode(source),
+      ]) {
+        assert.equal(only({ value }, plugin).variableName, 'real', source);
+      }
+    }
+    const info = '```{{language}}\n{{ unfinished\n```\n?[%{{ real }} A|B]';
+    assert.deepEqual(extractVariableNames(info), ['language', 'real']);
+    assert.equal(only(info, plugin).variableName, 'real');
+  }
+});
+
 test('unmatched code openings cannot pair across a paragraph or fence through an opaque marker', () => {
   const containers = [
     value => value,

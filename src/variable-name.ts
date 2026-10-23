@@ -209,6 +209,60 @@ function htmlLiteralEnd(
   }
 }
 
+/** Bound indented code to its last nonblank indented line, leaving trailing blanks outside. */
+function indentedCodeEnd(text: string, start: number): number | null {
+  if (start > 0) {
+    const previousStart = text.lastIndexOf('\n', start - 2) + 1;
+    if (!/^[\t \r]*$/.test(text.slice(previousStart, start - 1))) return null;
+  }
+  let cursor = start;
+  let lastContentEnd: number | null = null;
+  for (;;) {
+    const newline = text.indexOf('\n', cursor);
+    const lineEnd = newline < 0 ? text.length : newline;
+    const contentEnd = text[lineEnd - 1] === '\r' ? lineEnd - 1 : lineEnd;
+    const line = text.slice(cursor, contentEnd);
+    if (/^[\t ]*$/.test(line)) {
+      if (lastContentEnd === null) return null;
+    } else {
+      let columns = 0;
+      for (const character of line) {
+        if (columns >= 4) break;
+        if (character === ' ') columns++;
+        else if (character === '\t') columns += 4 - (columns % 4);
+        else break;
+      }
+      if (columns < 4) return lastContentEnd;
+      lastContentEnd = contentEnd;
+    }
+    if (newline < 0) return lastContentEnd;
+    cursor = newline + 1;
+  }
+}
+
+/** Preserve the opening token's attribute scope separately from a raw-text HTML body. */
+function rawHtmlSpan(
+  text: string,
+  start: number,
+  missingClosers: Map<string, number>
+): LiteralSpan | null {
+  const opening = /^ {0,3}<(script|style|pre|textarea)(?=[\t\n\f\r >])/i.exec(
+    text.slice(start, start + 16)
+  );
+  if (!opening) return null;
+  const openingEnd = htmlLiteralEnd(
+    text,
+    start + opening[0].indexOf('<'),
+    missingClosers
+  );
+  if (openingEnd === null) return null;
+  const closing = new RegExp(`</${opening[1]}[ \\t\\r\\n]*>`, 'gi');
+  closing.lastIndex = openingEnd;
+  const matched = closing.exec(text);
+  const end = matched ? matched.index + matched[0].length : text.length;
+  return { bodyStart: openingEnd, bodyEnd: end, end };
+}
+
 /** Index same-width inline code closers without pairing across a paragraph or fence. */
 function inlineCodeSpans(text: string): Map<number, LiteralSpan> {
   const spans = new Map<number, LiteralSpan>();
@@ -335,6 +389,21 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
   };
   let cursor = 0;
   while (cursor < text.length) {
+    if (cursor === 0 || text[cursor - 1] === '\n') {
+      const indentedEnd = indentedCodeEnd(text, cursor);
+      if (indentedEnd !== null) {
+        collectLiteral(cursor, indentedEnd);
+        cursor = indentedEnd;
+        continue;
+      }
+      const rawHtml = rawHtmlSpan(text, cursor, missingHtmlClosers);
+      if (rawHtml) {
+        collectLiteral(cursor, rawHtml.bodyStart);
+        collectLiteral(rawHtml.bodyStart, rawHtml.bodyEnd);
+        cursor = rawHtml.end;
+        continue;
+      }
+    }
     // A marker reached first owns its whole body, including any code/HTML-looking text.
     if (text.startsWith('{{', cursor)) {
       const marker = readVariableMarker(text, cursor);
@@ -358,7 +427,7 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
     if (text[cursor] === '`' || text[cursor] === '~') {
       const span = codeLiteralSpan(text, cursor, inlineSpans);
       if (span) {
-        collectLiteral(span.bodyStart, span.bodyEnd);
+        collectLiteral(cursor, span.bodyEnd);
         cursor = span.end;
         continue;
       }
