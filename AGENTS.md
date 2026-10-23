@@ -312,7 +312,11 @@ const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
   is claimed once through the first literal `}}`, including invalid bodies and inner `{{`.
 - Padding means Python's set, not JavaScript's `\s` or `String.trim()`; U+FEFF remains in keys.
 - **Example**: `%{{username}}`, `%{{用户名}}`, `%{{你的性别是？}}`
-- A leading `%{{...}}` is opaque to the interaction's `]`, option delimiters and Markdown.
+- Every `{{...}}` / `%{{...}}` is opaque to the interaction's `]`, option delimiters and
+  Markdown, including incomplete markers whose remaining tail stays literal. Only a leading
+  `%{{...}}` after Python whitespace padding assigns a variable; body markers retain raw source.
+- Use `trimVariablePadding` for the shared linear-time edge trim. Do not introduce regex suffix
+  trimming that repeatedly scans long internal whitespace runs, or use JS `String.trim()`.
 - Use the formatters' padding to preserve names ending with one `}`; do not add decoding or
   special handling for backslashes, quotes, case or Unicode normalization.
 

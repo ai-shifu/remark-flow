@@ -23,7 +23,16 @@
  * parser to prove the meaning survived, and then this parser is what the browser reads it with.
  */
 
-import { RAW_VARIABLE_MARKER_SOURCE } from './variable-name';
+import {
+  RAW_VARIABLE_MARKER_SOURCE,
+  readVariableMarker,
+} from './variable-name';
+
+/** A raw marker is opaque even when invalid or incomplete; its operators are always literal. */
+const markerEnd = (text: string, index: number): number | null =>
+  text.startsWith('{{', index)
+    ? (readVariableMarker(text, index)?.end ?? text.length)
+    : null;
 
 /** The characters a backslash may make ordinary. `/` covers `//`, `.` covers `...`. */
 export const ESCAPABLE = '|/.]';
@@ -53,6 +62,12 @@ export const escapeInteractionText = (text: string): string => {
   let out = '';
   let index = 0;
   while (index < text.length) {
+    const end = markerEnd(text, index);
+    if (end !== null) {
+      out += text.slice(index, end);
+      index = end;
+      continue;
+    }
     const char = text[index];
     if (char === '.') {
       let run = 0;
@@ -77,6 +92,12 @@ export const unescapeInteractionText = (text: string): string => {
   let out = '';
   let index = 0;
   while (index < text.length) {
+    const end = markerEnd(text, index);
+    if (end !== null) {
+      out += text.slice(index, end);
+      index = end;
+      continue;
+    }
     if (isEscape(text, index)) {
       out += text[index + 1];
       index += 2;
@@ -101,6 +122,11 @@ export const findUnescaped = (
 ): number => {
   let index = start;
   while (index < text.length) {
+    const end = markerEnd(text, index);
+    if (end !== null) {
+      index = end;
+      continue;
+    }
     if (isEscape(text, index)) {
       index += 2;
       continue;
@@ -134,6 +160,11 @@ export const splitOnSingleUnescapedPipe = (text: string): string[] => {
   let start = 0;
   let index = 0;
   while (index < text.length) {
+    const end = markerEnd(text, index);
+    if (end !== null) {
+      index = end;
+      continue;
+    }
     if (isEscape(text, index)) {
       index += 2;
       continue;
@@ -189,9 +220,48 @@ export const splitOnEllipsis = (content: string): [string, string] | null => {
  * then closing on the very bracket it escapes. Without that, this regex and a left-to-right
  * scanner disagree about `?[a\\]`, and two parsers of one grammar must not.
  */
-const OPTION_CONTENT_SOURCE = '(?:\\\\[|/.\\]]|\\\\(?![|/.\\]])|[^\\]\\\\])*';
+export const INTERACTION_CONTENT_SOURCE = `(?:${RAW_VARIABLE_MARKER_SOURCE}|\\\\[|/.\\]]|\\\\(?![|/.\\]])|\\{(?!\\{)|[^\\]\\\\{])*`;
 
-// A leading assignment is read whole before the interaction's own `]` or option escapes can
-// see its contents. The negative prefix guard prevents falling back to a shorter interaction
-// if a `%{{` marker never closes.
-export const INTERACTION_CONTENT_SOURCE = `(?:%${RAW_VARIABLE_MARKER_SOURCE}${OPTION_CONTENT_SOURCE}|(?!%\\{\\{)${OPTION_CONTENT_SOURCE})`;
+export interface InteractionSpan {
+  start: number;
+  end: number;
+  content: string;
+  complete: boolean;
+}
+
+/** Read one interaction without restarting inside a complete or unfinished raw marker. */
+export const readInteraction = (
+  text: string,
+  start = 0
+): InteractionSpan | null => {
+  if (!text.startsWith('?[', start)) return null;
+  let index = start + 2;
+  while (index < text.length) {
+    if (text.startsWith('{{', index)) {
+      const marker = readVariableMarker(text, index);
+      if (!marker) break;
+      index = marker.end;
+      continue;
+    }
+    if (isEscape(text, index)) {
+      index += 2;
+      continue;
+    }
+    if (text[index] === ']') {
+      if (text[index + 1] === '(') return null;
+      return {
+        start,
+        end: index + 1,
+        content: text.slice(start + 2, index),
+        complete: true,
+      };
+    }
+    index += 1;
+  }
+  return {
+    start,
+    end: text.length,
+    content: text.slice(start + 2),
+    complete: false,
+  };
+};

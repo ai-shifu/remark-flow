@@ -183,8 +183,11 @@ at both ends. Internal ordinary spaces, punctuation, emoji, single braces, `[` a
 Cc control characters, U+2028, U+2029, or the literal marker terminator `}}`.
 
 The first literal `}}` closes a marker. Backslashes and quotes are ordinary characters: there
-is no extra escaping, decoding, case folding or Unicode normalization. A leading `%{{...}}`
-is read as one unit before the interaction's `]`, option separators or Markdown can see its body.
+is no extra escaping, decoding, case folding or Unicode normalization. Every `{{...}}` or
+`%{{...}}` is read as one unit before the interaction's `]`, option separators or Markdown can
+see its body. Only a leading `%{{...}}` after Python whitespace padding assigns a variable;
+markers in option content retain their exact literal source. An unclosed marker owns the
+remaining tail, so a `?[...]` inside it cannot become an independent interaction.
 The padding set includes U+0085 and U+001C–001F; U+FEFF is retained as part of a name.
 
 ```markdown
@@ -226,6 +229,9 @@ only the marker at that position; both return `{ start, end, rawName, name }`, w
 for invalid bodies. The existing regex factory and source constants match valid markers and
 keep capture 1 normalized; they are suitable for validating a complete token, while the scanner
 also claims invalid outer markers so their contents cannot become nested variables.
+Use `trimVariablePadding` for the shared linear-time edge trim; it preserves U+FEFF and long
+internal whitespace runs. Anchor regex sources when validating a complete token; full-source
+scanning uses the readers rather than repeatedly restarting a regex inside malformed input.
 
 The formatters return `null` for invalid names and always add padding. That padding is needed
 when a name ends with a single `}`: `{{ question} }}` preserves `question}`, whereas

@@ -12,7 +12,7 @@ const CONTROL_SOURCE = '\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029';
 const NAME_CHARACTER_SOURCE = `(?:(?!\\}\\})[^${CONTROL_SOURCE}])`;
 const NAME_EDGE_SOURCE = `(?:(?!\\}\\})[^${CONTROL_SOURCE}${PYTHON_WHITESPACE_SOURCE}])`;
 export const VARIABLE_NAME_SOURCE = `${NAME_EDGE_SOURCE}(?:${NAME_CHARACTER_SOURCE}*?${NAME_EDGE_SOURCE})?`;
-const PADDING_SOURCE = `[${PYTHON_WHITESPACE_SOURCE}]*`;
+export const VARIABLE_PADDING_SOURCE = `[${PYTHON_WHITESPACE_SOURCE}]*`;
 
 const isPaddingCode = (code: number): boolean =>
   (code >= 0x09 && code <= 0x0d) ||
@@ -37,7 +37,7 @@ export const trimVariablePadding = (raw: string): string => {
 };
 
 /** A variable reference, with its normalized name in the first capture group. */
-export const VARIABLE_REFERENCE_SOURCE = `\\{\\{${PADDING_SOURCE}(${VARIABLE_NAME_SOURCE})${PADDING_SOURCE}\\}\\}`;
+export const VARIABLE_REFERENCE_SOURCE = `\\{\\{${VARIABLE_PADDING_SOURCE}(${VARIABLE_NAME_SOURCE})${VARIABLE_PADDING_SOURCE}\\}\\}`;
 
 /** The assignment marker at the beginning of an interaction. */
 export const VARIABLE_ASSIGNMENT_SOURCE = `%${VARIABLE_REFERENCE_SOURCE}`;

@@ -4,9 +4,13 @@ import {
   InteractionParser,
   type RemarkCompatibleResult,
 } from './interaction-parser';
-import { INTERACTION_CONTENT_SOURCE } from './escaping';
-import { INTERACTION_NODE, TOKENIZED_TREE } from './interaction-syntax';
-import { readVariableMarker } from './variable-name';
+import { readInteraction } from './escaping';
+import {
+  INTERACTION_NODE,
+  VARIABLE_NODE,
+  TOKENIZED_TREE,
+} from './interaction-syntax';
+import { readVariableMarker, trimVariablePadding } from './variable-name';
 
 interface InteractionElementNode extends Node {
   data: {
@@ -55,11 +59,9 @@ function parseWhole(
   parser: InteractionParser,
   warnLabel: string
 ): RemarkCompatibleResult | null {
-  const whole = new RegExp(`^\\?\\[(${INTERACTION_CONTENT_SOURCE})\\]$`).exec(
-    value
-  );
-  if (!whole) return null;
-  const innerContent = whole[1];
+  const span = readInteraction(value);
+  if (!span?.complete || span.end !== value.length) return null;
+  const innerContent = trimVariablePadding(span.content);
   if (innerContent.startsWith('%{') && !innerContent.startsWith('%{{')) {
     return null;
   }
@@ -97,6 +99,24 @@ export function transformInteractionsInTree(
   const parser = new InteractionParser();
 
   if (rootData?.[TOKENIZED_TREE] === true) {
+    const rawValue = (node: Literal): string => {
+      const start = node.position?.start.offset;
+      const end = node.position?.end.offset;
+      return source !== undefined && start !== undefined && end !== undefined
+        ? source.slice(start, end)
+        : (node.value as string);
+    };
+    visit(
+      tree,
+      VARIABLE_NODE,
+      (node: Literal, index: number | null, parent: Parent | null) => {
+        if (index === null || parent === null) return;
+        parent.children.splice(index, 1, {
+          type: 'text',
+          value: rawValue(node),
+        } as Literal);
+      }
+    );
     visit(
       tree,
       INTERACTION_NODE,
@@ -104,12 +124,7 @@ export function transformInteractionsInTree(
         if (index === null || parent === null) return;
         // Micromark replaces NUL with U+FFFD before extensions run. When the VFile source is
         // available, validate the original marker rather than silently creating a different key.
-        const start = node.position?.start.offset;
-        const end = node.position?.end.offset;
-        const value =
-          source !== undefined && start !== undefined && end !== undefined
-            ? source.slice(start, end)
-            : (node.value as string);
+        const value = rawValue(node);
         const parsed = parseWhole(value, parser, warnLabel);
         parent.children.splice(
           index,
@@ -135,37 +150,45 @@ export function transformInteractionsInTree(
 
       const value = node.value as string;
 
-      // Check if contains interaction syntax
-      const interactionRegex = new RegExp(
-        `\\?\\[(${INTERACTION_CONTENT_SOURCE})\\](?!\\()`
-      );
-      const match = interactionRegex.exec(value);
-
-      if (match) {
-        const markerOpen = value.lastIndexOf('?[%{{', match.index);
-        if (markerOpen >= 0 && markerOpen < match.index) {
-          const marker = readVariableMarker(value, markerOpen + 3);
-          if (!marker || marker.end > match.index) return;
+      let cursor = 0;
+      while (cursor < value.length) {
+        if (value.startsWith('{{', cursor)) {
+          const marker = readVariableMarker(value, cursor);
+          if (!marker) return;
+          cursor = marker.end;
+          continue;
         }
-        const fullMatch = match[0];
-        const startIndex = match.index;
-        const endIndex = startIndex + fullMatch.length;
-
+        if (!value.startsWith('?[', cursor)) {
+          cursor += 1;
+          continue;
+        }
+        const span = readInteraction(value, cursor);
+        if (!span) {
+          cursor += 2;
+          continue;
+        }
+        if (!span.complete) return;
+        const fullMatch = value.slice(span.start, span.end);
         try {
           const parsedResult = parseWhole(fullMatch, parser, warnLabel);
-          if (!parsedResult) return;
+          if (!parsedResult) {
+            cursor = span.end;
+            continue;
+          }
           // Create AST segments
           const segments = createSegments(
             value,
-            startIndex,
-            endIndex,
+            span.start,
+            span.end,
             parsedResult,
             'custom-variable'
           );
           parent.children.splice(index, 1, ...segments);
+          return;
         } catch (error) {
           console.warn(`Failed to parse ${warnLabel} syntax:`, error);
           // Keep original if parsing fails
+          return;
         }
       }
     }

@@ -488,6 +488,10 @@
     {
       "raw": "a　b",
       "name": "a　b"
+    },
+    {
+      "raw": "key ?[A|B]",
+      "name": "key ?[A|B]"
     }
   ],
   "extraction": [
@@ -546,6 +550,10 @@
     {
       "source": "%{{ Which [path] | level//hint...? }}",
       "names": ["Which [path] | level//hint...?"]
+    },
+    {
+      "source": "{{ key ?[A|B] }}",
+      "names": ["key ?[A|B]"]
     }
   ],
   "interactions": [
@@ -584,6 +592,67 @@
       "name": "path\\",
       "buttons": ["A", "B"],
       "values": ["A", "B"]
+    }
+  ],
+  "boundary_cases": [
+    {
+      "source": "?[ \t%{{ x]y }} A | B]",
+      "interaction_count": 1,
+      "name": "x]y",
+      "buttons": ["A", "B"],
+      "values": ["A", "B"]
+    },
+    {
+      "source": "?[A %{{ x]y }} | B]",
+      "interaction_count": 1,
+      "name": null,
+      "buttons": ["A %{{ x]y }}", "B"],
+      "values": ["A %{{ x]y }}", "B"]
+    },
+    {
+      "source": "?[A {{ x]y|a//b... }} | B]",
+      "interaction_count": 1,
+      "name": null,
+      "buttons": ["A {{ x]y|a//b... }}", "B"],
+      "values": ["A {{ x]y|a//b... }}", "B"]
+    },
+    {
+      "source": "?[A %{{ x|y//z... }} | B]",
+      "interaction_count": 1,
+      "name": null,
+      "buttons": ["A %{{ x|y//z... }}", "B"],
+      "values": ["A %{{ x|y//z... }}", "B"]
+    },
+    {
+      "source": "?[%{{unterminated ?[Go]",
+      "interaction_count": 0
+    },
+    {
+      "source": "?[A %{{unterminated ?[Go]",
+      "interaction_count": 0
+    },
+    {
+      "source": "?[A {{unterminated ?[Go]",
+      "interaction_count": 0
+    },
+    {
+      "source": "?[﻿%{{ x]y }} A | B]",
+      "interaction_count": 1,
+      "name": null,
+      "buttons": ["﻿%{{ x]y }} A", "B"],
+      "values": ["﻿%{{ x]y }} A", "B"]
+    },
+    {
+      "source": "{{ key ?[A|B] }}",
+      "interaction_count": 0
+    },
+    {
+      "source": "prefix {{ key ?[A|B] }} suffix",
+      "interaction_count": 0
+    },
+    {
+      "source": "{{ unterminated ?[Go]",
+      "interaction_count": 0
     }
   ]
 }

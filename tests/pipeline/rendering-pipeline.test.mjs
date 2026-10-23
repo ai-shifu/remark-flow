@@ -410,3 +410,26 @@ test('original VFile offsets preserve invalid NUL and a valid literal replacemen
   assert.equal(found[0].variableName, 'bad\ufffdkey');
   assert.ok(JSON.stringify(tree).includes('bad\\u0000key'));
 });
+
+test('shared marker boundaries are atomic in every actual Markdown plugin path', () => {
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const sample of contractCases.boundary_cases) {
+      const found = interactions(render(sample.source, plugin));
+      assert.equal(found.length, sample.interaction_count, sample.source);
+      if (sample.interaction_count) {
+        const expected = {
+          buttonTexts: sample.buttons,
+          buttonValues: sample.values,
+          isMultiSelect: false,
+        };
+        assert.deepEqual(
+          found[0],
+          sample.name === null
+            ? expected
+            : { ...expected, variableName: sample.name },
+          sample.source
+        );
+      }
+    }
+  }
+});

@@ -7,6 +7,12 @@ import {
   normalizeVariableName,
   readVariableMarker,
 } from '../src/index';
+import remarkFlow from '../src/remark-flow';
+import {
+  createParentNode,
+  createTextNode,
+  findCustomVariableNodes,
+} from './test-utils';
 
 interface ContractCases {
   normalization: Array<{ raw: string; name: string | null }>;
@@ -16,6 +22,13 @@ interface ContractCases {
     name: string;
     buttons: string[];
     values: string[];
+  }>;
+  boundary_cases: Array<{
+    source: string;
+    interaction_count: number;
+    name?: string | null;
+    buttons?: string[];
+    values?: string[];
   }>;
 }
 
@@ -50,6 +63,32 @@ describe('the shared MarkdownFlow variable-name contract', () => {
         buttonValues: values,
         isMultiSelect: false,
       });
+    }
+  );
+
+  test.each(cases.boundary_cases)(
+    'protects raw boundaries in $source',
+    sample => {
+      const tree = createParentNode([createTextNode(sample.source)]);
+      remarkFlow()(tree);
+      const found = findCustomVariableNodes(tree);
+      expect(found).toHaveLength(sample.interaction_count);
+      if (sample.interaction_count) {
+        const expected = {
+          buttonTexts: sample.buttons,
+          buttonValues: sample.values,
+          isMultiSelect: false,
+        };
+        expect(found[0].data.hProperties).toEqual(
+          sample.name === null
+            ? expected
+            : { ...expected, variableName: sample.name }
+        );
+        const parsed = new InteractionParser().parseToRemarkFormat(
+          sample.source
+        );
+        expect(parsed).toEqual(found[0].data.hProperties);
+      }
     }
   );
 });

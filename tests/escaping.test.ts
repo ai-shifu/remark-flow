@@ -27,6 +27,20 @@ import {
 } from '../src/index';
 
 describe('the escape rule', () => {
+  test('body markers keep their raw delimiters and escapes as literal source', () => {
+    const marker = String.raw`{{ x\]y|a\/\/b... }}`;
+    const content = `A ${marker} | B`;
+    expect(escapeInteractionText(marker)).toBe(marker);
+    expect(unescapeInteractionText(marker)).toBe(marker);
+    expect(findUnescaped(content, '|')).toBe(content.lastIndexOf('|'));
+    expect(findUnescaped(content, '//')).toBe(-1);
+    expect(splitOnSingleUnescapedPipe(content)).toEqual([`A ${marker} `, ' B']);
+    expect(splitOnEllipsis(content)).toBeNull();
+    expect(findUnescaped('A {{unclosed | // ... ]', '|')).toBe(-1);
+    expect(unescapeInteractionText(String.raw`{{unclosed \]`)).toBe(
+      String.raw`{{unclosed \]`
+    );
+  });
   test.each([
     'https://a.com/x',
     '^[a-z]+$',

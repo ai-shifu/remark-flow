@@ -172,8 +172,10 @@ const result = processor.processSync(`
 U+2028、U+2029，也不能包含标记结束符 `}}`。
 
 第一个字面 `}}` 结束标记；反斜杠和引号都是普通字符，不增加转义或解码规则，不合并内部空格，
-不做大小写或 Unicode 归一化。交互块开头的 `%{{...}}` 会先被整体读取，其中的 `]`、选项分隔符
-和 Markdown 符号不会截断变量名。两端空白集合包含 U+0085、U+001C–001F，U+FEFF 保留为键的一部分。
+不做大小写或 Unicode 归一化。任何位置的 `{{...}}` / `%{{...}}` 都会先被整体读取，其中的 `]`、
+选项分隔符和 Markdown 符号不会截断标记。只有去掉 Python 前置空白后位于开头的 `%{{...}}`
+负责赋值，选项中的标记保留原文；未闭合标记占据余下文本，不会从内部创造交互按钮。
+两端空白集合包含 U+0085、U+001C–001F，U+FEFF 保留为键的一部分。
 
 ```markdown
 你的性别是？
@@ -192,6 +194,8 @@ U+2028、U+2029，也不能包含标记结束符 `}}`。
 扫描全文时用 `findVariableMarkers(text)`，按第一个 `}}` 一次读取整段标记，不把键内部的 `{{`
 递归提取成其他变量。`readVariableMarker(text, start)` 只读取指定位置；两者返回
 `{ start, end, rawName, name }`，非法内容的 `name` 为 `null`。
+`trimVariablePadding` 使用线性扫描实现相同的两端空白处理，保留 U+FEFF 和内部长空格。
+验证完整标记时应将正则 source 锚定；扫描全文统一使用 reader，避免在非法内容内部重启匹配。
 
 `formatVariableReference(name)` 和 `formatVariableAssignment(name)` 返回带两端空格的标记，
 非法名称返回 `null`。例如 `question}` 应写成 `{{ question} }}`；直接拼成 `{{question}}}`

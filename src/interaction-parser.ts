@@ -14,11 +14,14 @@ import {
   splitOnSingleUnescapedPipe,
   splitUnescaped,
   unescapeInteractionText,
+  readInteraction,
 } from './escaping';
 import {
   normalizeVariableName,
   readVariableMarker,
+  trimVariablePadding,
   VARIABLE_ASSIGNMENT_SOURCE,
+  VARIABLE_PADDING_SOURCE,
 } from './variable-name';
 
 // Interaction input type enumeration
@@ -42,7 +45,9 @@ export const COMPILED_REGEXES = {
 
   // Names use the teaching engine's grammar; only the content after the marker is split into
   // choices, display/value pairs or a text input. Punctuation inside the name is ordinary text.
-  LAYER2_VARIABLE: new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`),
+  LAYER2_VARIABLE: new RegExp(
+    `^${VARIABLE_PADDING_SOURCE}${VARIABLE_ASSIGNMENT_SOURCE}([\\s\\S]*)$`
+  ),
 
   // Layer 3: Split content before and after ...
   LAYER3_ELLIPSIS: /^(.*?)\.\.\.(.*)/,
@@ -177,7 +182,7 @@ export class InteractionParser {
 
     if (result.error) {
       // Compatibility handling when parsing fails
-      return { placeholder: content.trim() };
+      return { placeholder: trimVariablePadding(content) };
     }
 
     // Convert to remark-compatible format
@@ -229,20 +234,9 @@ export class InteractionParser {
    * @returns Extracted bracket content, returns null if validation fails
    */
   private _layer1ValidateFormat(content: string): string | null {
-    content = content.trim();
-    const match = COMPILED_REGEXES.LAYER1_INTERACTION.exec(content);
-
-    if (!match) {
-      return null;
-    }
-
-    // Ensure the match is the complete content (no other text)
-    const matchedText = match[0];
-    if (matchedText.trim() !== content) {
-      return null;
-    }
-
-    return match[1];
+    content = trimVariablePadding(content);
+    const span = readInteraction(content);
+    return span?.complete && span.end === content.length ? span.content : null;
   }
 
   /**
@@ -254,6 +248,7 @@ export class InteractionParser {
   private _layer2DetectVariable(
     innerContent: string
   ): [boolean, string | null, string] {
+    innerContent = trimVariablePadding(innerContent);
     if (!innerContent.startsWith('%{{')) {
       // No variable, entire content used for display button parsing
       return [false, null, innerContent];
@@ -262,7 +257,9 @@ export class InteractionParser {
     const marker = readVariableMarker(innerContent, 1);
     if (!marker) return [true, null, innerContent];
     const variableName = normalizeVariableName(marker.rawName);
-    const remainingContent = innerContent.slice(marker.end).trim();
+    const remainingContent = trimVariablePadding(
+      innerContent.slice(marker.end)
+    );
 
     return [true, variableName, remainingContent];
   }
@@ -285,8 +282,10 @@ export class InteractionParser {
     const ellipsis = splitOnEllipsis(content);
 
     if (ellipsis) {
-      const beforeEllipsis = ellipsis[0].trim();
-      const question = unescapeInteractionText(ellipsis[1]).trim();
+      const beforeEllipsis = trimVariablePadding(ellipsis[0]);
+      const question = trimVariablePadding(
+        unescapeInteractionText(ellipsis[1])
+      );
 
       if (beforeEllipsis) {
         // Button group + text input: ?[Button1 | Button2 | ...question]
@@ -428,7 +427,7 @@ export class InteractionParser {
       }
 
       for (const buttonText of buttonTexts) {
-        const trimmed = buttonText.trim();
+        const trimmed = trimVariablePadding(buttonText);
         if (trimmed) {
           const button = this._parseSingleButton(trimmed);
           buttons.push(button);
@@ -436,21 +435,22 @@ export class InteractionParser {
       }
     } catch {
       // Fallback to treating entire content as single button
-      const whole = unescapeInteractionText(content).trim();
+      const whole = trimVariablePadding(unescapeInteractionText(content));
       return [[{ display: whole, value: whole }], false];
     }
 
     // For empty content (like just separators), return empty list
     if (
       !buttons.length &&
-      (content.trim() === '||' || content.trim() === '|')
+      (trimVariablePadding(content) === '||' ||
+        trimVariablePadding(content) === '|')
     ) {
       return [[], isMultiSelect];
     }
 
     // Ensure at least one button exists (but only if there's actual content)
-    if (!buttons.length && content.trim()) {
-      const whole = unescapeInteractionText(content).trim();
+    if (!buttons.length && trimVariablePadding(content)) {
+      const whole = trimVariablePadding(unescapeInteractionText(content));
       buttons.push({ display: whole, value: whole });
     }
 
@@ -464,7 +464,7 @@ export class InteractionParser {
    * @returns {display: display text, value: actual value}
    */
   private _parseSingleButton(buttonText: string): Button {
-    buttonText = buttonText.trim();
+    buttonText = trimVariablePadding(buttonText);
 
     // Detect Button//value format: split at the first "//" with a non-empty
     // display before it and a non-empty value after it. (indexOf instead of
@@ -472,12 +472,12 @@ export class InteractionParser {
     const separatorIndex = findUnescaped(buttonText, '//');
     if (separatorIndex > 0 && separatorIndex + 2 < buttonText.length) {
       return {
-        display: unescapeInteractionText(
-          buttonText.slice(0, separatorIndex)
-        ).trim(),
-        value: unescapeInteractionText(
-          buttonText.slice(separatorIndex + 2)
-        ).trim(),
+        display: trimVariablePadding(
+          unescapeInteractionText(buttonText.slice(0, separatorIndex))
+        ),
+        value: trimVariablePadding(
+          unescapeInteractionText(buttonText.slice(separatorIndex + 2))
+        ),
       };
     }
     const resolved = unescapeInteractionText(buttonText);
@@ -564,7 +564,10 @@ export function parseInteractionFormat(
   // Handle parse errors
   if (result.error) {
     // Compatibility handling when parsing fails
-    return [InteractionType.TEXT_ONLY, { question: content.trim() }];
+    return [
+      InteractionType.TEXT_ONLY,
+      { question: trimVariablePadding(content) },
+    ];
   }
 
   // Extract parse result and convert to original return format

@@ -11,8 +11,8 @@
  * an entity.
  *
  * So the brackets are claimed before any of that runs. This construct starts at `?[` and ends at
- * the first `]` the escape rule leaves unescaped after a leading `%{{...}}` marker, exactly where
- * `INTERACTION_CONTENT_SOURCE` ends it. The marker is opaque until its first literal `}}`.
+ * the first `]` the escape rule leaves unescaped outside any `{{...}}` marker, exactly where
+ * `INTERACTION_CONTENT_SOURCE` ends it. Every marker is opaque until its first literal `}}`.
  * The whole span becomes one node carrying the source unchanged (see `INTERACTION_NODE`),
  * which the plugins then parse from what the author wrote.
  *
@@ -57,6 +57,7 @@ interface CompileContext {
  * node of another type; the plugins turn each one into an element, or back into text.
  */
 export const INTERACTION_NODE = 'flowInteraction';
+export const VARIABLE_NODE = 'flowVariableMarker';
 
 /**
  * Set on the root of a tree parsed with this construct registered.
@@ -72,13 +73,13 @@ const LEFT_BRACKET = 91;
 const RIGHT_BRACKET = 93;
 const LEFT_PAREN = 40;
 const BACKSLASH = 92;
-const PERCENT = 37;
 const LEFT_BRACE = 123;
 const RIGHT_BRACE = 125;
 // The characters a backslash escapes inside an interaction: `|`, `/`, `.`, `]`. Mirrors ESCAPABLE.
 const ESCAPABLE_CODES = new Set([124, 47, 46, 93]);
 
 const INTERACTION = 'flowInteraction';
+const VARIABLE = 'flowVariableMarker';
 const MARKER = 'flowInteractionMarker';
 const DATA = 'flowInteractionData';
 const LINE_ENDING = 'lineEnding';
@@ -92,8 +93,7 @@ function tokenizeInteraction(
   ok: State,
   nok: State
 ): State {
-  let firstContent = true;
-  let hasAssignment = false;
+  let hasMarker = false;
   return start;
 
   // Every character is consumed inside a token of its own kind -- the `?[` and `]` markers, the
@@ -118,14 +118,12 @@ function tokenizeInteraction(
   // Data is only opened on a character it will hold: micromark rejects an empty token.
   function beforeContent(code: Code): State | undefined {
     if (code === null) {
-      if (hasAssignment) {
+      if (hasMarker) {
         effects.exit(INTERACTION);
         return ok(code);
       }
       return nok(code);
     }
-    const leadingAssignment = firstContent && code === PERCENT;
-    firstContent = false;
     if (code === RIGHT_BRACKET) {
       return close(code);
     }
@@ -133,29 +131,19 @@ function tokenizeInteraction(
       return lineEnding(code);
     }
     effects.enter(DATA);
-    if (leadingAssignment) {
-      effects.consume(code);
-      return variableFirstBrace;
-    }
     return content(code);
-  }
-
-  function variableFirstBrace(code: Code): State | undefined {
-    if (code !== LEFT_BRACE) return content(code);
-    effects.consume(code);
-    return variableSecondBrace;
   }
 
   function variableSecondBrace(code: Code): State | undefined {
     if (code !== LEFT_BRACE) return content(code);
     effects.consume(code);
-    hasAssignment = true;
+    hasMarker = true;
     return variableBody;
   }
 
   function variableBody(code: Code): State | undefined {
     if (code === null) {
-      // A confirmed assignment owns its tail even when it never closes. Rolling back here
+      // A confirmed marker owns its tail even when it never closes. Rolling back here
       // would let Markdown discover an inner `?[...]` and invent buttons inside the key.
       effects.exit(DATA);
       effects.exit(INTERACTION);
@@ -204,7 +192,7 @@ function tokenizeInteraction(
 
   function content(code: Code): State | undefined {
     if (code === null) {
-      if (hasAssignment) {
+      if (hasMarker) {
         effects.exit(DATA);
         effects.exit(INTERACTION);
         return ok(code);
@@ -220,6 +208,7 @@ function tokenizeInteraction(
       return lineEnding(code);
     }
     effects.consume(code);
+    if (code === LEFT_BRACE) return variableSecondBrace;
     return code === BACKSLASH ? afterBackslash : content;
   }
 
@@ -249,6 +238,46 @@ function tokenizeInteraction(
   }
 }
 
+/** Claim standalone references before Markdown can recognize syntax inside their opaque body. */
+function tokenizeVariable(
+  this: unknown,
+  effects: Effects,
+  ok: State,
+  nok: State
+): State {
+  return start;
+  function start(code: Code): State | undefined {
+    effects.enter(VARIABLE);
+    effects.consume(code);
+    return second;
+  }
+  function second(code: Code): State | undefined {
+    if (code !== LEFT_BRACE) return nok(code);
+    effects.consume(code);
+    return body;
+  }
+  function body(code: Code): State | undefined {
+    if (code === null) {
+      effects.exit(VARIABLE);
+      return ok(code);
+    }
+    if (isLineEnding(code)) {
+      effects.enter(LINE_ENDING);
+      effects.consume(code);
+      effects.exit(LINE_ENDING);
+      return body;
+    }
+    effects.consume(code);
+    return code === RIGHT_BRACE ? afterBrace : body;
+  }
+  function afterBrace(code: Code): State | undefined {
+    if (code !== RIGHT_BRACE) return body(code);
+    effects.consume(code);
+    effects.exit(VARIABLE);
+    return ok;
+  }
+}
+
 /** The micromark syntax extension: `?` may open an interaction wherever inline text is read. */
 export function interactionSyntax(): Record<string, unknown> {
   return {
@@ -257,6 +286,7 @@ export function interactionSyntax(): Record<string, unknown> {
         name: 'flowInteraction',
         tokenize: tokenizeInteraction,
       },
+      [LEFT_BRACE]: { name: VARIABLE, tokenize: tokenizeVariable },
     },
   };
 }
@@ -270,11 +300,19 @@ export function interactionFromMarkdown(): Record<string, unknown> {
       },
     ],
     enter: {
+      [VARIABLE](this: CompileContext, token: Token) {
+        this.enter({ type: VARIABLE_NODE, value: '' }, token);
+      },
       [INTERACTION](this: CompileContext, token: Token) {
         this.enter({ type: INTERACTION_NODE, value: '' }, token);
       },
     },
     exit: {
+      [VARIABLE](this: CompileContext, token: Token) {
+        const node = this.stack[this.stack.length - 1];
+        node.value = this.sliceSerialize(token);
+        this.exit(token);
+      },
       [INTERACTION](this: CompileContext, token: Token) {
         const node = this.stack[this.stack.length - 1];
         node.value = this.sliceSerialize(token);
