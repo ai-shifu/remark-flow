@@ -186,8 +186,8 @@ describe('syntax pattern group', () => {
   });
 
   test('handles unicode content', () => {
-    const input = '选择: ?[%{{主题}} 浅色//light | 深色//dark]';
-    // Test Chinese variable names and content
+    const input = 'Choose: ?[%{{café theme}} Light//light | Dark//dark]';
+    // Test Unicode variable names and content
   });
 
   test('gracefully handles malformed syntax', () => {
@@ -239,11 +239,11 @@ const TEST_CASES = {
   multiCombined: '?[%{{tags}} React||Vue||Angular||...Other framework]',
 
   // Unicode and i18n
-  chinese: '?[%{{用户名}}...请输入姓名]',
-  chineseMulti: '?[%{{技能}} 前端||后端||全栈]',
+  accented: '?[%{{café preference}}...How do you like your coffee?]',
+  accentedMulti: '?[%{{résumé skills}} Frontend||Backend||Full stack]',
   emoji: '?[👍 Good | 👎 Bad | 🤔 Unsure]',
   emojiMulti: '?[😊 Happy||😢 Sad||😡 Angry]',
-  mixed: '?[%{{语言}} English//en | 中文//zh | 日本语//ja]',
+  mixed: '?[%{{language 🌍}} English//en | Spanish//es | French//fr]',
 
   // Separator priority tests
   singleFirst: '?[%{{opt}} A | B||C]', // Single-select: ["A", "B||C"]
@@ -314,7 +314,7 @@ const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
   `findVariableMarkers` only for raw token scanning: each marker is claimed once through its
   first literal `}}`, including invalid bodies and inner `{{`, without document context.
 - Padding means Python's set, not JavaScript's `\s` or `String.trim()`; U+FEFF remains in keys.
-- **Example**: `%{{username}}`, `%{{用户名}}`, `%{{你的性别是？}}`
+- **Example**: `%{{username}}`, `%{{café preference}}`, `%{{What is your gender?}}`
 - Every `{{...}}` / `%{{...}}` is opaque to the interaction's `]`, option delimiters and
   Markdown, including incomplete markers whose remaining tail stays literal. Only a leading
   `%{{...}}` after Python whitespace padding assigns a variable; body markers retain raw source.
@@ -336,7 +336,7 @@ const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
 
    ```markdown
    ?[Save Changes//save-action] # Display "Save Changes", value "save-action"
-   ?[确定//confirm | 取消//cancel] # Unicode support
+   ?[Confirm 👍//confirm | Cancel 👎//cancel] # Unicode support
    ```
 
 3. **Variable Text Input**
@@ -407,7 +407,7 @@ const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
 
 4. **Unicode Support**
    - Full Unicode support in all text fields
-   - Chinese variable names: `%{{用户名}}`
+   - Unicode variable names: `%{{café preference}}`
    - Emoji support: `?[👍 Good | 👎 Bad]`
 
 ### Plugin Implementation Standards
@@ -622,8 +622,8 @@ describe('remark-flow plugin', () => {
   });
 
   test('handles unicode characters correctly', () => {
-    const input = '选择: ?[确定//confirm | 取消//cancel]';
-    // Test Chinese text handling
+    const input = 'Choose: ?[Confirm 👍//confirm | Cancel 👎//cancel]';
+    // Test Unicode text handling
   });
 
   test('gracefully handles malformed syntax', () => {
@@ -759,6 +759,9 @@ const patterns = {
 ```
 
 ## API Documentation Standards
+
+Keep English documentation and its examples in English. Dedicated translations and multilingual
+regression fixtures are maintained separately.
 
 ### Type Definitions
 

@@ -10,7 +10,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 
-English | [简体中文](README_ZH-CN.md)
+English | [Simplified Chinese](README_ZH-CN.md)
 
 </div>
 
@@ -91,7 +91,7 @@ Buttons without a variable also support multi-select (`||`) and the `...` text-i
 
 ```markdown
 ?[Save Changes//save-action]
-?[确定//confirm | 取消//cancel]
+?[Confirm//confirm | Cancel//cancel]
 ```
 
 **Output:** `{ buttonTexts: ["Save Changes"], buttonValues: ["save-action"] }`
@@ -170,8 +170,8 @@ The first separator type encountered determines the parsing mode:
 ### 8. Unicode & International Support
 
 ```markdown
-?[%{{语言}} English//en | 中文//zh | 日本語//ja]
-?[%{{用户名}}...请输入您的姓名]
+?[%{{language}} English//en | Spanish//es | French//fr]
+?[%{{café preference}}...How do you like your coffee?]
 ?[👍 Good | 👎 Bad | 🤔 Unsure]
 ```
 
@@ -196,8 +196,8 @@ the remaining tail, so arbitrary text containing it cannot be embedded as a lite
 this helper. No additional brace-escaping syntax is introduced.
 
 ```markdown
-你的性别是？
-?[%{{你的性别是？}} 男 | 女 | 秘密]
+What is your gender?
+?[%{{What is your gender?}} Male | Female | Prefer not to say]
 ```
 
 The variable name is the answer's storage key; it does not add a visible question heading.
@@ -219,11 +219,11 @@ import {
   VARIABLE_ASSIGNMENT_SOURCE,
 } from 'remark-flow';
 
-extractVariableNames('%{{你的性别是？}} {{你的性别是？}}'); // ['你的性别是？']
+extractVariableNames('%{{What is your gender?}} {{What is your gender?}}'); // ['What is your gender?']
 findDocumentVariableMarkers('Show `{{` then {{ q }}').map(
   marker => marker.name
 ); // [null, 'q']
-normalizeVariableName(' 你的性别是？ '); // '你的性别是？'
+normalizeVariableName(' What is your gender? '); // 'What is your gender?'
 isValidVariableName('has space'); // true
 createVariableExpressionRegex('gu'); // A fresh matcher; capture 1 is the trimmed name.
 formatVariableReference('question}'); // '{{ question} }}'
@@ -498,7 +498,7 @@ function CustomMarkdownRenderer() {
   const content = `
   # Interactive Form
 
-  Choose language: ?[%{{lang}} English | 中文 | Español]
+  Choose language: ?[%{{lang}} English | Spanish | French]
   Your name: ?[%{{name}}...Enter your name]
   Action: ?[Submit//submit | Reset//reset]
   `;
