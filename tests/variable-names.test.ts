@@ -1142,3 +1142,35 @@ describe('native HTML block admission', () => {
     }
   });
 });
+
+const autolinkCases: {
+  id: string;
+  source: string;
+  names: string[];
+  autolink: boolean;
+}[] = JSON.parse(
+  readFileSync(
+    path.join(process.cwd(), 'tests/fixtures/autolink-cases.json'),
+    'utf8'
+  )
+);
+test.each(autolinkCases)(
+  'bounds complete angle-autolink examples: $id',
+  ({ source, names }) => {
+    for (const eol of ['\n', '\r\n', '\r']) {
+      const original = source.replace(/\n/g, eol);
+      expect(extractVariableNames(original)).toEqual(names);
+      for (const marker of findDocumentVariableMarkers(original)) {
+        expect(original.slice(marker.start, marker.start + 2)).toBe('{{');
+      }
+    }
+  }
+);
+
+test('keeps marker-first and raw readers independent of autolink context', () => {
+  const name = '<https://{{unfinished>';
+  expect(extractVariableNames(`{{${name}}}`)).toEqual([name]);
+  const source = '<https://{{unfinished>\n\n?[%{{ real }} A|B]';
+  expect(findVariableMarkers(source)).toHaveLength(1);
+  expect(findDocumentVariableMarkers(source)).toHaveLength(2);
+});

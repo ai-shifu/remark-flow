@@ -1706,3 +1706,54 @@ test('native HTML block admission does not require a complete opening tag', () =
     }
   }
 });
+
+test('complete CommonMark angle autolinks bound examples and preserve native paragraphs', () => {
+  const cases = JSON.parse(
+    readFileSync(
+      new URL('../fixtures/autolink-cases.json', import.meta.url),
+      'utf8'
+    )
+  );
+  for (const item of cases) {
+    const native = unified().use(remarkParse).parse(item.source);
+    let links = 0;
+    const walk = node => {
+      if (node.type === 'link') links++;
+      (node.children ?? []).forEach(walk);
+    };
+    walk(native);
+    assert.equal(links > 0, item.autolink, item.id);
+    for (const plugin of [
+      remarkFlow,
+      remarkInteraction,
+      remarkCustomVariable,
+    ]) {
+      for (const eol of ['\n', '\r\n', '\r']) {
+        const source = item.source.replaceAll('\n', eol);
+        assert.deepEqual(extractVariableNames(source), item.names, item.id);
+        for (const value of [source, Buffer.from(source)]) {
+          const tree = render({ value }, plugin);
+          const controls = interactions(tree);
+          assert.deepEqual(
+            controls.map(control => control.variableName),
+            item.variables,
+            item.id
+          );
+          if (item.autolink)
+            assert.equal(tree.children.length, native.children.length, item.id);
+        }
+      }
+    }
+  }
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    const fallback = '<span title="{{"> body\n\n?[%{{ real }} A|B]';
+    const tree = render(fallback, plugin);
+    assert.equal(tree.children.length, 2);
+    assert.deepEqual(
+      interactions(tree).map(control => control.variableName),
+      ['real']
+    );
+    const name = '<https://{{unfinished>';
+    assert.equal(only(`?[%{{${name}}} A|B]`, plugin).variableName, name);
+  }
+});

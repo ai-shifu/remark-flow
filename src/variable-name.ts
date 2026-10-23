@@ -72,6 +72,10 @@ const HTML_SPACE = /[\t\n\f\r ]/;
 const RESOURCE_SPACE = /[\t\n\r ]/;
 const MARKDOWN_PUNCTUATION = /[!-/:-@[-`{-~]/;
 const MAX_LINK_DESTINATION_DEPTH = 32;
+const MAX_AUTOLINK_SCHEME_LENGTH = 32;
+const MAX_AUTOLINK_DOMAIN_LABEL_LENGTH = 63;
+const AUTOLINK_ATEXT = /[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]/;
+const ASCII_ALPHANUMERIC = /[A-Za-z0-9]/;
 const ATX_HEADING_LINE = /^ {0,3}#{1,6}(?:[ \t]|$)/;
 const THEMATIC_BREAK_LINE =
   /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/;
@@ -164,6 +168,52 @@ function htmlLiteralEnd(
         cursor++;
       if (cursor === valueStart) return null;
     }
+  }
+}
+
+/** Read only complete CommonMark angle URI/email autolinks, without URL safety policy. */
+function autolinkSpan(text: string, start: number): LiteralSpan | null {
+  let cursor = start + 1;
+  if (/[A-Za-z]/.test(text[cursor] ?? '')) {
+    let size = 0;
+    while (
+      size < MAX_AUTOLINK_SCHEME_LENGTH &&
+      /[A-Za-z0-9+.-]/.test(text[cursor] ?? '')
+    ) {
+      cursor++;
+      size++;
+    }
+    if (size >= 2 && text[cursor] === ':') {
+      cursor++;
+      while (cursor < text.length) {
+        const code = text.charCodeAt(cursor);
+        if (text[cursor] === '>')
+          return { bodyStart: start + 1, bodyEnd: cursor, end: cursor + 1 };
+        // Markdown replaces NUL for literal admission; raw marker validity still sees the NUL.
+        if ((code > 0 && code <= 32) || code === 127 || text[cursor] === '<')
+          return null;
+        cursor++;
+      }
+      return null;
+    }
+  }
+  cursor = start + 1;
+  while (cursor < text.length && AUTOLINK_ATEXT.test(text[cursor])) cursor++;
+  if (cursor === start + 1 || text[cursor] !== '@') return null;
+  cursor++;
+  for (;;) {
+    if (!ASCII_ALPHANUMERIC.test(text[cursor] ?? '')) return null;
+    const labelStart = cursor;
+    while (cursor < text.length && /[A-Za-z0-9-]/.test(text[cursor])) cursor++;
+    if (
+      cursor - labelStart > MAX_AUTOLINK_DOMAIN_LABEL_LENGTH ||
+      text[cursor - 1] === '-'
+    )
+      return null;
+    if (text[cursor] === '>')
+      return { bodyStart: start + 1, bodyEnd: cursor, end: cursor + 1 };
+    if (text[cursor] !== '.') return null;
+    cursor++;
   }
 }
 
@@ -1198,6 +1248,12 @@ const scanDocumentVariableMarkers = (
       continue;
     }
     if (text[cursor] === '<') {
+      const link = autolinkSpan(text, cursor);
+      if (link) {
+        collectLiteral(link.bodyStart, link.bodyEnd);
+        cursor = link.end;
+        continue;
+      }
       const end = htmlLiteralEnd(text, cursor, missingHtmlClosers);
       if (end !== null) {
         collectLiteral(cursor, end);

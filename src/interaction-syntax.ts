@@ -524,6 +524,9 @@ function tokenizeOpaqueBlock(
   const html = context.parser.constructs.text[LESS_THAN]?.find(
     construct => construct.name === 'htmlText'
   );
+  const autolink = context.parser.constructs.text[LESS_THAN]?.find(
+    construct => construct.name === 'autolink'
+  );
   const math = context.parser.constructs.text[DOLLAR_SIGN]?.find(
     construct => construct.name === 'mathText'
   );
@@ -629,12 +632,12 @@ function tokenizeOpaqueBlock(
           skipCodeOpening
         )(code);
       }
-      if (!interaction && code === LESS_THAN && html) {
+      if (!interaction && code === LESS_THAN && (autolink || html)) {
         checkedSize = 0;
         return effects.check(
-          { partial: true, tokenize: htmlSpan },
+          { partial: true, tokenize: autolinkSpan },
           skipChecked,
-          ordinary
+          tryHtml
         )(code);
       }
       if (!interaction && code === DOLLAR_SIGN && math) {
@@ -825,6 +828,26 @@ function tokenizeOpaqueBlock(
   ): State {
     if (!html) return no;
     return nativeSpan.call(this, html, 'htmlText', check, yes, no);
+  }
+
+  function autolinkSpan(
+    this: FlowContext,
+    check: Effects,
+    yes: State,
+    no: State
+  ): State {
+    if (!autolink) return no;
+    return nativeSpan.call(this, autolink, 'autolink', check, yes, no);
+  }
+
+  function tryHtml(code: Code): State | undefined {
+    // A failed native autolink trial rolls its tokens back, so reset its byte count too.
+    checkedSize = 0;
+    return effects.check(
+      { partial: true, tokenize: htmlSpan },
+      skipChecked,
+      ordinary
+    )(code);
   }
 
   function mathSpan(

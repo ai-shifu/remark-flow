@@ -232,7 +232,7 @@ formatVariableAssignment('Which [path] | level?'); // '%{{ Which [path] | level?
 
 `extractVariableNames` scans the supplied source in order, including code fences and comments,
 and returns each name once. It does not change the host's policy for which source to inspect.
-Complete markers inside code, HTML, math, or link-resource examples are still collected, while incomplete examples stay
+Complete markers inside code, HTML, math, angle URI/email links, or link-resource examples are still collected, while incomplete examples stay
 inside their closing literal boundary and cannot hide a later variable. This includes fence info
 strings, quote/list-contained fences, indented code that starts a block, reference-definition
 destinations and titles (including native container and lazy continuations), ordinary HTML blocks
