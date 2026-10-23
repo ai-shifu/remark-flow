@@ -645,7 +645,10 @@ function ordinaryHtmlSpan(
  * and end at the literal boundary, or at document EOF for a true unclosed outside marker.
  * Raw readers remain available when the caller needs opaque markers without Markdown context.
  */
-export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
+const scanDocumentVariableMarkers = (
+  text: string,
+  rejectedOpenings?: number[]
+): VariableMarker[] => {
   // Documents without an opening cannot produce a marker or need literal indexes.
   if (!text.includes('{{')) return [];
   const markers: VariableMarker[] = [];
@@ -819,6 +822,7 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
         cursor = span.end;
         continue;
       }
+      rejectedOpenings?.push(cursor);
       while (text[cursor] === '$') cursor++;
       continue;
     }
@@ -837,6 +841,7 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
         cursor = span.end;
         continue;
       }
+      if (text[cursor] === '`') rejectedOpenings?.push(cursor);
       // Only the full opening run can start a span; its suffix is not another opening.
       const character = text[cursor];
       while (text[cursor] === character) cursor++;
@@ -853,6 +858,18 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
     cursor++;
   }
   return markers;
+};
+
+export const findDocumentVariableMarkers = (text: string): VariableMarker[] =>
+  scanDocumentVariableMarkers(text);
+
+/** @internal Seed native inline guards from the same complete-document scan. */
+export const findRejectedDocumentInlineOpenings = (
+  text: string
+): Uint32Array => {
+  const offsets: number[] = [];
+  scanDocumentVariableMarkers(text, offsets);
+  return Uint32Array.from(offsets);
 };
 
 /** Collect unique document names in source order, including complete literal example markers. */

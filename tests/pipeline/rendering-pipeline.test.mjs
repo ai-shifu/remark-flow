@@ -876,6 +876,117 @@ test('code spans and escaped braces do not claim a following real code fence', (
   }
 });
 
+test('inline lookahead preserves container boundaries and marker-first ownership', () => {
+  const question = '?[%{{ real }} A|B]';
+  for (const delimiter of ['`', '$']) {
+    for (const boundary of ['> ', '- ', '1. ', '---\n', '<div>\n']) {
+      const source = `Text ${delimiter}{{ unfinished\n${boundary}${delimiter} end\n\n${question}`;
+      for (const plugin of [
+        remarkFlow,
+        remarkInteraction,
+        remarkCustomVariable,
+      ]) {
+        assert.deepEqual(interactions(render(source, plugin)), [], source);
+      }
+      const ordinary = `Text ${delimiter}unfinished\n${boundary}${delimiter} end\n\nAfter`;
+      const native = unified()
+        .use(remarkParse)
+        .use(remarkGfm)
+        .use(remarkMath)
+        .use(remarkBreaks);
+      const expected = native.runSync(
+        native.parse(ordinary),
+        ordinary
+      ).children;
+      for (const plugin of [
+        remarkFlow,
+        remarkInteraction,
+        remarkCustomVariable,
+      ]) {
+        assert.deepEqual(render(ordinary, plugin).children, expected, ordinary);
+      }
+    }
+    // Ordered markers other than 1 cannot interrupt an existing paragraph.
+    const continued = `Text ${delimiter}{{ unfinished\n2. ${delimiter} end\n\n${question}`;
+    assert.equal(only(continued).variableName, 'real', continued);
+  }
+  for (const body of [
+    '{{ complete }}',
+    String.raw`\{{ escaped`,
+    '<span title="{{">',
+    '[x](url "{{")',
+    '$x {{ y$',
+  ]) {
+    const source = `Text \u0060${body}\n> \u0060 end\n\n${question}`;
+    for (const plugin of [
+      remarkFlow,
+      remarkInteraction,
+      remarkCustomVariable,
+    ]) {
+      assert.equal(only(source, plugin).variableName, 'real', source);
+    }
+  }
+});
+
+test('source seeds preserve parser order, copies, repeated parses, and original offsets', () => {
+  const build = (plugin, mode) => {
+    let processor = unified();
+    if (mode === 'reverse') processor.use(plugin).use(remarkParse);
+    else processor.use(remarkParse).use(plugin);
+    processor.use(remarkGfm).use(remarkMath).use(remarkBreaks);
+    if (mode === 'copy') processor = processor.freeze()().use(remarkParse);
+    if (mode === 'multiple')
+      processor
+        .use(remarkFlow)
+        .use(remarkInteraction)
+        .use(remarkCustomVariable);
+    return processor;
+  };
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const mode of ['normal', 'reverse', 'copy', 'multiple']) {
+      const processor = build(plugin, mode);
+      const run = source => processor.runSync(processor.parse(source), source);
+      for (const eol of ['\n', '\r\n', '\r']) {
+        for (const prefix of ['🙂 ', '\uFEFF🙂 ', '\u0000🙂 ', '\uFFFD🙂 ']) {
+          const source = `${prefix}Text \u0060{{ unfinished${eol}> \u0060 end${eol}${eol}?[%{{ real }} A|B]`;
+          for (const value of [
+            source,
+            Buffer.from(source),
+            new TextEncoder().encode(source),
+          ]) {
+            assert.deepEqual(interactions(run({ value })), [], source);
+          }
+        }
+      }
+      const ordinary = 'Text `unfinished\n> ` end\n\nAfter';
+      const native = unified()
+        .use(remarkParse)
+        .use(remarkGfm)
+        .use(remarkMath)
+        .use(remarkBreaks);
+      assert.deepEqual(
+        run(ordinary).children,
+        native.runSync(native.parse(ordinary), ordinary).children
+      );
+      assert.equal(
+        interactions(run('?[%{{ \uFEFF }} A|B]'))[0].variableName,
+        '\uFEFF'
+      );
+      const parser = processor.parser;
+      assert.equal(processor.parser, parser);
+      processor.parser = () => {
+        throw new Error('parser failure');
+      };
+      assert.throws(() => processor.parse('{{ pending'), /parser failure/);
+      processor.parser = parser;
+      assert.equal(
+        interactions(run('?[%{{ real }} A|B]'))[0].variableName,
+        'real'
+      );
+    }
+  }
+});
+
 test('HTML-looking link titles do not extend lookahead into a later Markdown block', () => {
   const sources = [
     '``',

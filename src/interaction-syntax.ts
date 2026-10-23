@@ -23,7 +23,10 @@
  * into micromark's packages, which this one does not depend on at runtime.
  */
 
-import { isInlineCodeBoundaryLine } from './variable-name';
+import {
+  findRejectedDocumentInlineOpenings,
+  isInlineCodeBoundaryLine,
+} from './variable-name';
 
 /** A character code as micromark passes it: a code point, a virtual line ending, or null at EOF. */
 type Code = number | null;
@@ -152,6 +155,26 @@ const CARRIAGE_RETURN_LINE_FEED = -3;
 const HORIZONTAL_TAB = -2;
 const VIRTUAL_SPACE = -1;
 const literalInlineOpenings = new WeakMap<object, Set<number>>();
+const sourceInlineOpenings = new WeakMap<object, Uint32Array>();
+const sourceInlineSeeds: Uint32Array[] = [];
+const EMPTY_INLINE_SEED = new Uint32Array();
+
+function rejectedSourceOpening(parser: object, offset: number): boolean {
+  let offsets = sourceInlineOpenings.get(parser);
+  if (offsets === undefined) {
+    offsets =
+      sourceInlineSeeds[sourceInlineSeeds.length - 1] ?? EMPTY_INLINE_SEED;
+    sourceInlineOpenings.set(parser, offsets);
+  }
+  let low = 0;
+  let high = offsets.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (offsets[middle] < offset) low = middle + 1;
+    else high = middle;
+  }
+  return offsets[low] === offset;
+}
 
 function previousLiteralCodeOpening(this: FlowContext, code: Code): boolean {
   const native = this.parser.constructs.text[BACKTICK]?.find(
@@ -174,7 +197,10 @@ function tokenizeLiteralInlineOpening(
   ok: State,
   nok: State
 ): State {
-  if (!literalInlineOpenings.get(this.parser)?.has(this.now().offset))
+  if (
+    !rejectedSourceOpening(this.parser, this.now().offset) &&
+    !literalInlineOpenings.get(this.parser)?.has(this.now().offset)
+  )
     return nok;
   let opening: Code;
   return start;
@@ -488,6 +514,7 @@ function tokenizeOpaqueBlock(
   let mathOpeningOffset = 0;
   let mathOpeningCrossedBoundary = false;
   let previousCode: Code = null;
+  let rejectedDelimiter: Code = null;
   const labels: Array<Token & { inactive?: boolean }> = [];
   const activeLinkLabels = new Set<Token & { inactive?: boolean }>();
   const rejectedInlineOpenings = new Set<number>();
@@ -588,6 +615,10 @@ function tokenizeOpaqueBlock(
       // Inline code and HTML already own their braces. Check before claiming a
       // marker so a later real code fence remains in Markdown's flow.
       if (!interaction && code === BACKTICK) {
+        if (rejectedSourceOpening(context.parser, context.now().offset)) {
+          rejectedDelimiter = code;
+          return skipRejectedOpening(code);
+        }
         checkedSize = 0;
         codeOpeningSize = 0;
         codeOpeningOffset = context.now().offset;
@@ -607,6 +638,10 @@ function tokenizeOpaqueBlock(
         )(code);
       }
       if (!interaction && code === DOLLAR_SIGN && math) {
+        if (rejectedSourceOpening(context.parser, context.now().offset)) {
+          rejectedDelimiter = code;
+          return skipRejectedOpening(code);
+        }
         checkedSize = 0;
         mathOpeningSize = 0;
         mathOpeningOffset = context.now().offset;
@@ -645,6 +680,15 @@ function tokenizeOpaqueBlock(
       }
     }
     return ordinary(code);
+  }
+
+  function skipRejectedOpening(code: Code): State | undefined {
+    if (code !== rejectedDelimiter) return content(code);
+    effects.consume(code);
+    previousCode = code;
+    brace = false;
+    question = false;
+    return skipRejectedOpening;
   }
 
   function ordinary(code: Code): State | undefined {
@@ -1187,6 +1231,89 @@ export function interactionFromMarkdown(): Record<string, unknown> {
 
 interface ProcessorLike {
   data(): Record<string, unknown>;
+  parser?: unknown;
+  Parser?: unknown;
+}
+
+type MarkdownParser = (
+  this: unknown,
+  document: string,
+  file?: unknown
+) => unknown;
+const seededProcessors = new WeakSet<object>();
+const seededParsers = new WeakMap<MarkdownParser, MarkdownParser>();
+const seededParserWrappers = new WeakSet<MarkdownParser>();
+
+function seedParser(parser: unknown): unknown {
+  if (typeof parser !== 'function') return parser;
+  const original = parser as MarkdownParser;
+  if (seededParserWrappers.has(original)) return original;
+  let wrapped = seededParsers.get(original);
+  if (!wrapped) {
+    wrapped = function (document, file) {
+      // Micromark strips one leading BOM before assigning source offsets.
+      const source = document.startsWith('\uFEFF')
+        ? document.slice(1)
+        : document;
+      sourceInlineSeeds.push(findRejectedDocumentInlineOpenings(source));
+      try {
+        return original.call(this, document, file);
+      } finally {
+        sourceInlineSeeds.pop();
+      }
+    };
+    seededParsers.set(original, wrapped);
+    seededParserWrappers.add(wrapped);
+  }
+  return wrapped;
+}
+
+/** Keep parser assignment working in either plugin order and on copied processors. */
+function registerSourceSeeds(processor: ProcessorLike): void {
+  if (seededProcessors.has(processor)) return;
+  seededProcessors.add(processor);
+  for (const key of ['parser', 'Parser'] as const) {
+    const descriptor = Object.getOwnPropertyDescriptor(processor, key);
+    if (descriptor && !descriptor.configurable) {
+      if ('value' in descriptor && descriptor.writable)
+        processor[key] = seedParser(processor[key]);
+      continue;
+    }
+    let current = processor[key];
+    const writable =
+      !descriptor ||
+      !!descriptor.set ||
+      ('value' in descriptor && descriptor.writable);
+    Object.defineProperty(processor, key, {
+      configurable: descriptor?.configurable ?? true,
+      enumerable: descriptor?.enumerable ?? true,
+      get() {
+        // Later attachers such as GFM install competing flow constructs. Marker
+        // ownership must run first regardless of the user's plugin order.
+        const data = processor.data();
+        const extensions = data.micromarkExtensions as unknown[] | undefined;
+        if (
+          extensions?.includes(SYNTAX) &&
+          extensions[extensions.length - 1] !== SYNTAX
+        )
+          data.micromarkExtensions = [
+            ...extensions.filter(extension => extension !== SYNTAX),
+            SYNTAX,
+          ];
+        return seedParser(
+          descriptor?.get ? descriptor.get.call(this) : current
+        );
+      },
+      ...(writable
+        ? {
+            set(value: unknown) {
+              if (descriptor?.set) descriptor.set.call(this, value);
+              else current = value;
+            },
+          }
+        : {}),
+    });
+  }
 }
 
 // A unified processor is a callable instance, so `typeof` says function, not object.
@@ -1207,6 +1334,7 @@ export function registerInteractionSyntax(self: unknown): void {
     return;
   }
   const data = self.data();
+  registerSourceSeeds(self);
   const add = (field: string, value: unknown) => {
     const list = (data[field] as unknown[] | undefined) ?? [];
     if (!list.includes(value)) {
