@@ -1,6 +1,7 @@
 import type { Node } from 'unist';
 import { transformInteractionsInTree } from './interaction-plugin-core';
 import { registerInteractionSyntax } from './interaction-syntax';
+import { decodeMarkdownSource } from './markdown-source';
 
 /**
  * remarkFlow plugin - uses unified interaction parser
@@ -13,7 +14,7 @@ export default function remarkFlow(this: unknown) {
     transformInteractionsInTree(
       tree,
       'interaction',
-      typeof file?.value === 'string' ? file.value : undefined
+      decodeMarkdownSource(file?.value)
     );
   };
 }

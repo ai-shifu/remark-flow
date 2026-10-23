@@ -13,6 +13,8 @@ import { test } from 'node:test';
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { URL } from 'node:url';
+import { Buffer } from 'node:buffer';
+import { TextEncoder } from 'node:util';
 
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
@@ -409,6 +411,38 @@ test('original VFile offsets preserve invalid NUL and a valid literal replacemen
   assert.equal(found.length, 1);
   assert.equal(found[0].variableName, 'bad\ufffdkey');
   assert.ok(JSON.stringify(tree).includes('bad\\u0000key'));
+});
+
+test('string and byte-valued VFiles preserve raw key validity through every plugin', () => {
+  const source =
+    '前缀🙂 ?[%{{bad\u0000key}} A | B] 中间 ?[%{{good\ufffd题}} C | D] 尾部 {{raw\u0000题}}';
+  const encoded = new TextEncoder().encode(source);
+  const storage = new Uint8Array(encoded.length + 6);
+  storage.set(encoded, 3);
+  const values = [
+    source,
+    Buffer.from(source, 'utf8'),
+    encoded,
+    storage.subarray(3, 3 + encoded.length),
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const value of values) {
+      // unified creates a real VFile for both parse and runSync, retaining its supported value
+      // representation. Token offsets are decoded UTF-16 offsets, not UTF-8 byte offsets.
+      const tree = render({ value }, plugin);
+      assert.deepEqual(interactions(tree), [
+        {
+          variableName: 'good\ufffd题',
+          buttonTexts: ['C', 'D'],
+          buttonValues: ['C', 'D'],
+          isMultiSelect: false,
+        },
+      ]);
+      const serialized = JSON.stringify(tree);
+      assert.ok(serialized.includes('bad\\u0000key'));
+      assert.ok(serialized.includes('raw\\u0000题'));
+    }
+  }
 });
 
 test('shared marker boundaries are atomic in every actual Markdown plugin path', () => {

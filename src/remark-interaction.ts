@@ -1,6 +1,7 @@
 import type { Node } from 'unist';
 import { transformInteractionsInTree } from './interaction-plugin-core';
 import { registerInteractionSyntax } from './interaction-syntax';
+import { decodeMarkdownSource } from './markdown-source';
 
 export default function remarkInteraction(this: unknown) {
   registerInteractionSyntax(this);
@@ -8,7 +9,7 @@ export default function remarkInteraction(this: unknown) {
     transformInteractionsInTree(
       tree,
       'interaction',
-      typeof file?.value === 'string' ? file.value : undefined
+      decodeMarkdownSource(file?.value)
     );
   };
 }
