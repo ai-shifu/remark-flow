@@ -403,7 +403,7 @@ test('the shared contract interactions survive every actual Markdown plugin path
   }
 });
 
-test('original VFile offsets preserve invalid NUL and a valid literal replacement character', () => {
+test('token chunks preserve invalid NUL and a valid literal replacement character', () => {
   const tree = render(
     '前缀🙂 ?[%{{bad\u0000key}} A | B] 中间 ?[%{{bad\ufffdkey}} A | B]'
   );
@@ -411,6 +411,81 @@ test('original VFile offsets preserve invalid NUL and a valid literal replacemen
   assert.equal(found.length, 1);
   assert.equal(found[0].variableName, 'bad\ufffdkey');
   assert.ok(JSON.stringify(tree).includes('bad\\u0000key'));
+});
+
+test('container token serialization preserves NUL provenance across source representations', () => {
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '>    ' : '> 1. '}${line}`)
+        .join('\n'),
+  ];
+  const samples = [
+    { value: '?[%{{\t\n good\ufffd题\t\r\n}} A | B]', key: 'good\ufffd题' },
+    { value: '?[%{{\t\n bad🙂\ufffd\u0000\ufffdkey\t\r\n}} A | B]' },
+    { value: '{{\t\n good\ufffd题\t\r\n}}' },
+    { value: '{{\t\n bad🙂\ufffd\u0000\ufffdkey\t\r\n}}' },
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const wrap of containers) {
+      for (const sample of samples) {
+        const source = wrap(sample.value);
+        const encoded = new TextEncoder().encode(source);
+        const storage = new Uint8Array(encoded.length + 6);
+        storage.set(encoded, 3);
+        for (const value of [
+          source,
+          Buffer.from(source),
+          encoded,
+          storage.subarray(3, 3 + encoded.length),
+        ]) {
+          for (const withSource of [false, true]) {
+            const processor = unified()
+              .use(remarkParse)
+              .use(remarkGfm)
+              .use(remarkMath)
+              .use(plugin)
+              .use(remarkBreaks);
+            const tree = processor.runSync(
+              processor.parse({ value }),
+              withSource ? { value } : undefined
+            );
+            const found = interactions(tree);
+            if (sample.key) {
+              assert.equal(found.length, 1, source);
+              assert.equal(found[0].variableName, sample.key, source);
+              assert.deepEqual(found[0].buttonTexts, ['A', 'B']);
+            } else {
+              assert.equal(found.length, 0, source);
+              const texts = [];
+              const walk = node => {
+                if (node.type === 'text') texts.push(node.value);
+                (node.children ?? []).forEach(walk);
+              };
+              walk(tree);
+              assert.equal(
+                texts.join('\n'),
+                sample.value.replace(/\r\n/g, '\n'),
+                source
+              );
+            }
+          }
+        }
+      }
+    }
+  }
 });
 
 test('string and byte-valued VFiles preserve raw key validity through every plugin', () => {

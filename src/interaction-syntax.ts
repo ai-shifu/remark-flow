@@ -30,12 +30,17 @@ type State = (code: Code) => State | undefined;
 
 interface Effects {
   enter(type: string): unknown;
-  exit(type: string): unknown;
+  exit(type: string): Token;
   consume(code: Code): void;
 }
 
 interface Token {
   type: string;
+  flowNullOffsets?: number[];
+}
+
+interface TokenizeContext {
+  sliceStream(token: Token): Array<string | number>;
 }
 
 interface CompileContext {
@@ -83,16 +88,55 @@ const VARIABLE = 'flowVariableMarker';
 const MARKER = 'flowInteractionMarker';
 const DATA = 'flowInteractionData';
 const LINE_ENDING = 'lineEnding';
+const REPLACEMENT_CHARACTER = 0xfffd;
+const CARRIAGE_RETURN_LINE_FEED = -3;
+const HORIZONTAL_TAB = -2;
+const VIRTUAL_SPACE = -1;
+
+/** Preserve NUL provenance before a serialized token loses the distinction from literal U+FFFD. */
+function preserveTokenNulls(context: TokenizeContext, token: Token): void {
+  const offsets: number[] = [];
+  let offset = 0;
+  let afterTab = false;
+  for (const chunk of context.sliceStream(token)) {
+    // sliceSerialize omits the virtual padding after a real tab when expandTabs is false.
+    if (chunk === VIRTUAL_SPACE && afterTab) continue;
+    if (chunk === REPLACEMENT_CHARACTER) offsets.push(offset);
+    offset +=
+      typeof chunk === 'string'
+        ? chunk.length
+        : chunk === CARRIAGE_RETURN_LINE_FEED
+          ? 2
+          : 1;
+    afterTab = chunk === HORIZONTAL_TAB;
+  }
+  if (offsets.length) token.flowNullOffsets = offsets;
+}
+
+/** Restore only known raw NULs while keeping Markdown's container-prefix serialization. */
+function tokenValue(context: CompileContext, token: Token): string {
+  const value = context.sliceSerialize(token);
+  if (!token.flowNullOffsets) return value;
+  const parts: string[] = [];
+  let at = 0;
+  for (const offset of token.flowNullOffsets) {
+    parts.push(value.slice(at, offset), '\u0000');
+    at = offset + 1;
+  }
+  parts.push(value.slice(at));
+  return parts.join('');
+}
 
 /** Whether `code` is one of micromark's virtual line endings (CR, LF, CRLF). */
 const isLineEnding = (code: Code): boolean => code !== null && code < -2;
 
 function tokenizeInteraction(
-  this: unknown,
+  this: TokenizeContext,
   effects: Effects,
   ok: State,
   nok: State
 ): State {
+  const finish = () => preserveTokenNulls(this, effects.exit(INTERACTION));
   let hasMarker = false;
   return start;
 
@@ -119,7 +163,7 @@ function tokenizeInteraction(
   function beforeContent(code: Code): State | undefined {
     if (code === null) {
       if (hasMarker) {
-        effects.exit(INTERACTION);
+        finish();
         return ok(code);
       }
       return nok(code);
@@ -146,7 +190,7 @@ function tokenizeInteraction(
       // A confirmed marker owns its tail even when it never closes. Rolling back here
       // would let Markdown discover an inner `?[...]` and invent buttons inside the key.
       effects.exit(DATA);
-      effects.exit(INTERACTION);
+      finish();
       return ok(code);
     }
     if (isLineEnding(code)) {
@@ -173,7 +217,7 @@ function tokenizeInteraction(
 
   function variableBeforeData(code: Code): State | undefined {
     if (code === null) {
-      effects.exit(INTERACTION);
+      finish();
       return ok(code);
     }
     if (isLineEnding(code)) return variableLineEnding(code);
@@ -194,7 +238,7 @@ function tokenizeInteraction(
     if (code === null) {
       if (hasMarker) {
         effects.exit(DATA);
-        effects.exit(INTERACTION);
+        finish();
         return ok(code);
       }
       return nok(code);
@@ -233,18 +277,19 @@ function tokenizeInteraction(
     if (code === LEFT_PAREN) {
       return nok(code);
     }
-    effects.exit(INTERACTION);
+    finish();
     return ok(code);
   }
 }
 
 /** Claim standalone references before Markdown can recognize syntax inside their opaque body. */
 function tokenizeVariable(
-  this: unknown,
+  this: TokenizeContext,
   effects: Effects,
   ok: State,
   nok: State
 ): State {
+  const finish = () => preserveTokenNulls(this, effects.exit(VARIABLE));
   return start;
   function start(code: Code): State | undefined {
     effects.enter(VARIABLE);
@@ -254,18 +299,26 @@ function tokenizeVariable(
   function second(code: Code): State | undefined {
     if (code !== LEFT_BRACE) return nok(code);
     effects.consume(code);
-    return body;
+    return beforeBody;
   }
-  function body(code: Code): State | undefined {
+  function beforeBody(code: Code): State | undefined {
     if (code === null) {
-      effects.exit(VARIABLE);
+      finish();
       return ok(code);
     }
     if (isLineEnding(code)) {
       effects.enter(LINE_ENDING);
       effects.consume(code);
       effects.exit(LINE_ENDING);
-      return body;
+      return beforeBody;
+    }
+    effects.enter(DATA);
+    return body(code);
+  }
+  function body(code: Code): State | undefined {
+    if (code === null || isLineEnding(code)) {
+      effects.exit(DATA);
+      return beforeBody(code);
     }
     effects.consume(code);
     return code === RIGHT_BRACE ? afterBrace : body;
@@ -273,7 +326,8 @@ function tokenizeVariable(
   function afterBrace(code: Code): State | undefined {
     if (code !== RIGHT_BRACE) return body(code);
     effects.consume(code);
-    effects.exit(VARIABLE);
+    effects.exit(DATA);
+    finish();
     return ok;
   }
 }
@@ -310,12 +364,12 @@ export function interactionFromMarkdown(): Record<string, unknown> {
     exit: {
       [VARIABLE](this: CompileContext, token: Token) {
         const node = this.stack[this.stack.length - 1];
-        node.value = this.sliceSerialize(token);
+        node.value = tokenValue(this, token);
         this.exit(token);
       },
       [INTERACTION](this: CompileContext, token: Token) {
         const node = this.stack[this.stack.length - 1];
-        node.value = this.sliceSerialize(token);
+        node.value = tokenValue(this, token);
         this.exit(token);
       },
     },

@@ -92,20 +92,12 @@ function parseWhole(
  */
 export function transformInteractionsInTree(
   tree: Node,
-  warnLabel: string,
-  source?: string
+  warnLabel: string
 ): void {
   const rootData = tree.data as Record<string, unknown> | undefined;
   const parser = new InteractionParser();
 
   if (rootData?.[TOKENIZED_TREE] === true) {
-    const rawValue = (node: Literal): string => {
-      const start = node.position?.start.offset;
-      const end = node.position?.end.offset;
-      return source !== undefined && start !== undefined && end !== undefined
-        ? source.slice(start, end)
-        : (node.value as string);
-    };
     visit(
       tree,
       VARIABLE_NODE,
@@ -113,7 +105,7 @@ export function transformInteractionsInTree(
         if (index === null || parent === null) return;
         parent.children.splice(index, 1, {
           type: 'text',
-          value: rawValue(node),
+          value: node.value as string,
         } as Literal);
       }
     );
@@ -122,9 +114,8 @@ export function transformInteractionsInTree(
       INTERACTION_NODE,
       (node: Literal, index: number | null, parent: Parent | null) => {
         if (index === null || parent === null) return;
-        // Micromark replaces NUL with U+FFFD before extensions run. When the VFile source is
-        // available, validate the original marker rather than silently creating a different key.
-        const value = rawValue(node);
+        // The tokenizer retains raw NUL provenance without reintroducing container prefixes.
+        const value = node.value as string;
         const parsed = parseWhole(value, parser, warnLabel);
         parent.children.splice(
           index,

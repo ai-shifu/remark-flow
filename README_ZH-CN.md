@@ -201,9 +201,9 @@ U+2028、U+2029，也不能包含标记结束符 `}}`。
 非法名称返回 `null`。例如 `question}` 应写成 `{{ question} }}`；直接拼成 `{{question}}}`
 会提前闭合，得到另一个键 `question`。请复用格式化函数保持往返一致。
 
-独立调用 `parse`、`runSync` 时，也要把原始 Markdown 作为 `runSync` 的 VFile 参数传入。
-Markdown 在插件运行前会替换 NUL，插件需要原文才能拒绝非法键，避免将替换字符存成新变量；
-只有已经丢失原文的手工 AST 时，无法恢复这些信息。
+分词后的 AST 会保留原始 NUL 的来源信息，直接调用 `parse`、`runSync` 而不重复传入原文，
+也能拒绝含 NUL 的非法名称，同时保留合法的 U+FFFD 字符。多行标记的序列化会移除引用块、
+列表等 Markdown 容器前缀。外部 AST 若已丢失 NUL 和 U+FFFD 的区别，则无法恢复这些信息。
 
 ## 📖 API 参考
 

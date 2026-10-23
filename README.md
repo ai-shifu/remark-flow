@@ -237,10 +237,10 @@ The formatters return `null` for invalid names and always add padding. That padd
 when a name ends with a single `}`: `{{ question} }}` preserves `question}`, whereas
 `{{question}}}` closes earlier and names `question`.
 
-When transforming a parsed tree, pass the original source as the VFile argument to `runSync`
-as well as to `parse`. Markdown replaces NUL before extensions run; the original source lets
-the plugin reject that invalid key rather than treating the replacement character as a new key.
-No plugin can recover a character already lost from a manually supplied tree with no source.
+Tokenized trees preserve raw NUL provenance, so `parse` followed by `runSync` rejects invalid
+NUL-containing names even without passing the source again. Literal U+FFFD remains a valid key
+character. Token serialization also removes block quote and list prefixes from multiline markers.
+An external tree that already lost the distinction between NUL and U+FFFD cannot recover it.
 
 ## 📖 API Reference
 

@@ -1,7 +1,6 @@
 import type { Node } from 'unist';
 import { transformInteractionsInTree } from './interaction-plugin-core';
 import { registerInteractionSyntax } from './interaction-syntax';
-import { decodeMarkdownSource } from './markdown-source';
 
 /**
  * remarkFlow plugin - uses unified interaction parser
@@ -10,11 +9,7 @@ export default function remarkFlow(this: unknown) {
   // The tokenizer has to be in place before the Markdown is parsed, not after, so it is
   // registered here, where the processor is.
   registerInteractionSyntax(this);
-  return (tree: Node, file?: { value?: unknown }) => {
-    transformInteractionsInTree(
-      tree,
-      'interaction',
-      decodeMarkdownSource(file?.value)
-    );
+  return (tree: Node) => {
+    transformInteractionsInTree(tree, 'interaction');
   };
 }
