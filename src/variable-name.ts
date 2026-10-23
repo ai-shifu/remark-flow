@@ -71,7 +71,7 @@ export const isValidVariableName = (raw: string): boolean =>
 
 /**
  * Create an independent valid-token matcher. Anchor its source when validating a complete
- * token; scan arbitrary documents with findVariableMarkers instead of a restarting regex.
+ * token; scan Markdown documents with findDocumentVariableMarkers instead of a restarting regex.
  */
 export const createVariableExpressionRegex = (flags = 'g'): RegExp =>
   new RegExp(VARIABLE_REFERENCE_SOURCE, flags);
@@ -236,15 +236,35 @@ function codeLiteralSpan(text: string, start: number): LiteralSpan | null {
 }
 
 /**
- * Collect unique document names in source order, including complete markers in literal examples.
- * An incomplete example marker cannot cross the closing code/HTML boundary and hide later names.
- * Raw readers remain available when the caller needs a single opaque marker without Markdown.
+ * Read document marker ranges in source order, using original UTF-16 source offsets.
+ * Complete markers in code/HTML examples retain their names; incomplete markers have `name: null`
+ * and end at the literal boundary, or at document EOF for a true unclosed outside marker.
+ * Raw readers remain available when the caller needs opaque markers without Markdown context.
  */
-export const extractVariableNames = (text: string): string[] => {
-  const names = new Set<string>();
+export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
+  const markers: VariableMarker[] = [];
   const collectLiteral = (start: number, end: number) => {
-    for (const marker of findVariableMarkers(text.slice(start, end))) {
-      if (marker.name !== null) names.add(marker.name);
+    const literal = text.slice(start, end);
+    let cursor = 0;
+    for (;;) {
+      const opening = literal.indexOf('{{', cursor);
+      if (opening < 0) return;
+      const marker = readVariableMarker(literal, opening);
+      if (!marker) {
+        markers.push({
+          start: start + opening,
+          end,
+          rawName: literal.slice(opening + 2),
+          name: null,
+        });
+        return;
+      }
+      markers.push({
+        ...marker,
+        start: start + marker.start,
+        end: start + marker.end,
+      });
+      cursor = marker.end;
     }
   };
   let cursor = 0;
@@ -252,8 +272,16 @@ export const extractVariableNames = (text: string): string[] => {
     // A marker reached first owns its whole body, including any code/HTML-looking text.
     if (text.startsWith('{{', cursor)) {
       const marker = readVariableMarker(text, cursor);
-      if (!marker) break;
-      if (marker.name !== null) names.add(marker.name);
+      if (!marker) {
+        markers.push({
+          start: cursor,
+          end: text.length,
+          rawName: text.slice(cursor + 2),
+          name: null,
+        });
+        break;
+      }
+      markers.push(marker);
       cursor = marker.end;
       continue;
     }
@@ -282,6 +310,15 @@ export const extractVariableNames = (text: string): string[] => {
       }
     }
     cursor++;
+  }
+  return markers;
+};
+
+/** Collect unique document names in source order, including complete literal example markers. */
+export const extractVariableNames = (text: string): string[] => {
+  const names = new Set<string>();
+  for (const marker of findDocumentVariableMarkers(text)) {
+    if (marker.name !== null) names.add(marker.name);
   }
   return [...names];
 };

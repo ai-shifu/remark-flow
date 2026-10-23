@@ -1,6 +1,7 @@
 import {
   createVariableExpressionRegex,
   extractVariableNames,
+  findDocumentVariableMarkers,
   findVariableMarkers,
   formatVariableAssignment,
   formatVariableReference,
@@ -145,6 +146,71 @@ describe('the shared variable-name grammar', () => {
     expect(
       extractVariableNames('`{{` '.repeat(3000) + '?[%{{ q }} A|B]')
     ).toEqual(['q']);
+  });
+
+  test('returns original document ranges for complete, invalid, and unclosed markers', () => {
+    const source = '🙂 Show `{{` then ?[%{{ q }} A|B] {{bad\nkey}} {{unclosed';
+    const ranges = findDocumentVariableMarkers(source);
+    const codeOpening = source.indexOf('{{');
+    const question = source.indexOf('{{ q }}');
+    const invalid = source.indexOf('{{bad');
+    const unclosed = source.indexOf('{{unclosed');
+    expect(ranges).toEqual([
+      { start: codeOpening, end: codeOpening + 2, rawName: '', name: null },
+      {
+        start: question,
+        end: question + '{{ q }}'.length,
+        rawName: ' q ',
+        name: 'q',
+      },
+      {
+        start: invalid,
+        end: invalid + '{{bad\nkey}}'.length,
+        rawName: 'bad\nkey',
+        name: null,
+      },
+      { start: unclosed, end: source.length, rawName: 'unclosed', name: null },
+    ]);
+    expect(extractVariableNames(source)).toEqual(['q']);
+    expect(findDocumentVariableMarkers('{{open ?[A|B]')).toEqual([
+      {
+        start: 0,
+        end: '{{open ?[A|B]'.length,
+        rawName: 'open ?[A|B]',
+        name: null,
+      },
+    ]);
+    // Raw APIs intentionally retain their original syntax-only behavior.
+    expect(findVariableMarkers('{{open ?[A|B]')).toEqual([]);
+    expect(findVariableMarkers(String.raw`\{{ kept }}`)[0].name).toBe('kept');
+  });
+
+  test('keeps literal-local ranges in the original source and does not deduplicate them', () => {
+    const source = '🙂 `%{{ q }}` <span title="%{{ q }}"> {{ q }}';
+    const ranges = findDocumentVariableMarkers(source);
+    expect(ranges.map(marker => marker.name)).toEqual(['q', 'q', 'q']);
+    for (const marker of ranges) {
+      expect(source.slice(marker.start, marker.end)).toBe('{{ q }}');
+      expect(marker.rawName).toBe(' q ');
+    }
+    expect(extractVariableNames(source)).toEqual(['q']);
+    const fenced = '~~~md\n{{unclosed\n~~~~\n{{ outside }}';
+    const markers = findDocumentVariableMarkers(fenced);
+    expect(markers[0]).toEqual({
+      start: fenced.indexOf('{{'),
+      end: fenced.indexOf('~~~~'),
+      rawName: 'unclosed\n',
+      name: null,
+    });
+    expect(markers[1].name).toBe('outside');
+    expect(fenced.slice(markers[1].start, markers[1].end)).toBe(
+      '{{ outside }}'
+    );
+    const html = '<span title="{{"> {{ outside }}';
+    const htmlMarkers = findDocumentVariableMarkers(html);
+    expect(htmlMarkers[0].end).toBe(html.indexOf('>') + 1);
+    expect(htmlMarkers[0].name).toBeNull();
+    expect(htmlMarkers[1].name).toBe('outside');
   });
 
   test('does not share matcher state or normalize punctuation and case', () => {

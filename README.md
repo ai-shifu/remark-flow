@@ -202,6 +202,7 @@ Hosts can reuse the same grammar instead of maintaining their own identifier reg
 import {
   createVariableExpressionRegex,
   extractVariableNames,
+  findDocumentVariableMarkers,
   findVariableMarkers,
   formatVariableAssignment,
   formatVariableReference,
@@ -214,6 +215,9 @@ import {
 } from 'remark-flow';
 
 extractVariableNames('%{{你的性别是？}} {{你的性别是？}}'); // ['你的性别是？']
+findDocumentVariableMarkers('Show `{{` then {{ q }}').map(
+  marker => marker.name
+); // [null, 'q']
 normalizeVariableName(' 你的性别是？ '); // '你的性别是？'
 isValidVariableName('has space'); // true
 createVariableExpressionRegex('gu'); // A fresh matcher; capture 1 is the trimmed name.
@@ -226,15 +230,21 @@ and returns each name once. It does not change the host's policy for which sourc
 Complete markers inside code or HTML examples are still collected, while incomplete examples stay
 inside their closing literal boundary and cannot hide a later variable. Markdown-escaped opening
 braces do not start a document marker. The raw readers below do not interpret Markdown context.
-Use `findVariableMarkers` for full-source scanning: each raw marker is read only once, so a
+Use `findDocumentVariableMarkers(text)` when editors or document readers need marker ranges.
+It returns `{ start, end, rawName, name }` in source order, with original UTF-16 offsets suitable
+for `text.slice(start, end)`. It retains duplicates and invalid markers. Unclosed markers have
+`name: null` and end at their code/HTML boundary, or at document EOF when outside a literal span.
+`extractVariableNames` uses these same ranges and returns only unique, non-null names.
+
+Use `findVariableMarkers` for raw token scanning: each raw marker is read only once, so a
 `{{` inside its body does not open another variable. `readVariableMarker(text, start)` reads
 only the marker at that position; both return `{ start, end, rawName, name }`, with `name: null`
 for invalid bodies. The existing regex factory and source constants match valid markers and
 keep capture 1 normalized; they are suitable for validating a complete token, while the scanner
 also claims invalid outer markers so their contents cannot become nested variables.
 Use `trimVariablePadding` for the shared linear-time edge trim; it preserves U+FEFF and long
-internal whitespace runs. Anchor regex sources when validating a complete token; full-source
-scanning uses the readers rather than repeatedly restarting a regex inside malformed input.
+internal whitespace runs. Anchor regex sources when validating a complete token; Markdown document
+scanning uses the document reader rather than restarting a regex inside malformed input.
 
 The formatters return `null` for invalid names and always add padding. That padding is needed
 when a name ends with a single `}`: `{{ question} }}` preserves `question}`, whereas

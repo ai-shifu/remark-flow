@@ -21,6 +21,7 @@ import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import remarkBreaks from 'remark-breaks';
+import { findDocumentVariableMarkers as esmDocumentMarkers } from '../../dist/index.js';
 
 const require = createRequire(import.meta.url);
 const contractCases = JSON.parse(
@@ -36,8 +37,20 @@ const {
   escapeInteractionText,
   InteractionParser,
   extractVariableNames,
+  findDocumentVariableMarkers,
   formatVariableAssignment,
 } = require('../../dist/index.js');
+
+test('the built document marker reader is available through ESM and CommonJS', () => {
+  assert.equal(esmDocumentMarkers, findDocumentVariableMarkers);
+  const source = '🙂 `{{` then {{ q }}';
+  const markers = esmDocumentMarkers(source);
+  assert.deepEqual(
+    markers.map(marker => marker.name),
+    [null, 'q']
+  );
+  assert.equal(source.slice(markers[1].start, markers[1].end), '{{ q }}');
+});
 
 const render = (markdown, plugin = remarkFlow) => {
   const processor = unified()
