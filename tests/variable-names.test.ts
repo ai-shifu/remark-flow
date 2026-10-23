@@ -726,3 +726,78 @@ test.each(['[', '!['])(
     expect(extractVariableNames(source)).toEqual(['real']);
   }
 );
+
+test('returns no marker ranges for a large literal document without openings', () => {
+  const source = '`a'.repeat(500_000);
+  expect(findDocumentVariableMarkers(source)).toEqual([]);
+});
+
+describe('document container, ordinary HTML and line-ending boundaries', () => {
+  test.each(['\n', '\r\n', '\r'])(
+    'keeps literal examples local with %j line endings',
+    eol => {
+      for (const prefix of [
+        ['- ~~~', '  {{ unfinished', '  ~~~'],
+        ['> ~~~', '> {{ unfinished', '> ~~~'],
+        ['> - ~~~', '>   {{ unfinished', '>   ~~~'],
+        ['- > ~~~', '  > {{ unfinished', '  > ~~~'],
+        ['1. ```', '   {{ unfinished', '   ```'],
+        ['~~~', '{{ unfinished', '~~~'],
+        ['<div>', '{{ unfinished', '</div>', ''],
+        ['<custom-tag>', '{{ unfinished', '</custom-tag>', ''],
+      ]) {
+        const source = prefix.join(eol) + eol + '?[%{{ real }} A|B]';
+        expect(extractVariableNames(source)).toEqual(['real']);
+        const markers = findDocumentVariableMarkers(source);
+        expect(markers.map(marker => marker.name)).toEqual([null, 'real']);
+        for (const marker of markers) {
+          expect(source.slice(marker.start, marker.start + 2)).toBe('{{');
+          expect(
+            source.slice(
+              marker.start + 2,
+              marker.name === null ? marker.end : marker.end - 2
+            )
+          ).toBe(marker.rawName);
+        }
+      }
+    }
+  );
+
+  test.each(['\n', '\r\n', '\r'])(
+    'preserves complete literal names and raw offsets with %j',
+    eol => {
+      const source = [
+        '🙂',
+        '- ~~~{{ language }}',
+        '  {{ example }}',
+        '  ~~~',
+        '?[%{{ real }} A|B]',
+      ].join(eol);
+      expect(extractVariableNames(source)).toEqual([
+        'language',
+        'example',
+        'real',
+      ]);
+      const markers = findDocumentVariableMarkers(source);
+      expect(
+        markers.map(marker => source.slice(marker.start + 2, marker.end - 2))
+      ).toEqual(markers.map(marker => marker.rawName));
+    }
+  );
+
+  test('preserves marker-first ownership and complete HTML tokens across blank lines', () => {
+    expect(
+      extractVariableNames('{{ - ~~~\n{{ example }}\n~~~\n{{ real }}')
+    ).toEqual(['real']);
+    expect(
+      extractVariableNames(
+        '<div title="{{ attr }}\n\nstill">\n{{ unfinished\n</div>\n\n{{ real }}'
+      )
+    ).toEqual(['attr', 'real']);
+    expect(
+      extractVariableNames(
+        'paragraph\n<custom-tag>\n{{ unfinished\n</custom-tag>\n\n{{ real }}'
+      )
+    ).toEqual([]);
+  });
+});

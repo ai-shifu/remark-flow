@@ -1177,6 +1177,21 @@ test('document extraction and the real Markdown pipeline agree at literal bounda
   const question = '?[%{{ real }} A|B]';
   const cases = [
     {
+      source: `- ~~~\n  {{ unfinished\n  ~~~\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `<div>\n{{ unfinished\n</div>\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `~~~\r{{ unfinished\r~~~\r${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
       source: `    {{ unfinished\n\n${question}`,
       names: ['real'],
       variables: ['real'],

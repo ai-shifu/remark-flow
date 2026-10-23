@@ -9,6 +9,40 @@ interface LiteralSpan {
   end: number;
 }
 
+interface DocumentLine {
+  start: number;
+  contentEnd: number;
+  end: number;
+}
+
+/** Keep original UTF-16 offsets while recognizing every Markdown line ending. */
+function documentLines(text: string): DocumentLine[] {
+  const lines: DocumentLine[] = [];
+  let start = 0;
+  for (const ending of text.matchAll(/\r\n|[\r\n]/g)) {
+    const contentEnd = ending.index ?? 0;
+    const end = contentEnd + ending[0].length;
+    lines.push({ start, contentEnd, end });
+    start = end;
+  }
+  lines.push({ start, contentEnd: text.length, end: text.length });
+  return lines;
+}
+
+function containingLine(
+  lines: readonly DocumentLine[],
+  offset: number
+): number {
+  let low = 0;
+  let high = lines.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (lines[middle].start <= offset) low = middle + 1;
+    else high = middle;
+  }
+  return Math.max(0, low - 1);
+}
+
 const HTML_SPACE = /[\t\n\f\r ]/;
 const RESOURCE_SPACE = /[\t\n\r ]/;
 const MARKDOWN_PUNCTUATION = /[!-/:-@[-`{-~]/;
@@ -100,18 +134,20 @@ function htmlLiteralEnd(
 }
 
 /** Bound indented code to its last nonblank indented line, leaving trailing blanks outside. */
-function indentedCodeEnd(text: string, start: number): number | null {
-  if (start > 0) {
-    const previousStart = text.lastIndexOf('\n', start - 2) + 1;
-    if (!/^[\t \r]*$/.test(text.slice(previousStart, start - 1))) return null;
+function indentedCodeEnd(
+  text: string,
+  lines: readonly DocumentLine[],
+  index: number
+): number | null {
+  if (index > 0) {
+    const previous = lines[index - 1];
+    if (!/^[\t ]*$/.test(text.slice(previous.start, previous.contentEnd)))
+      return null;
   }
-  let cursor = start;
   let lastContentEnd: number | null = null;
-  for (;;) {
-    const newline = text.indexOf('\n', cursor);
-    const lineEnd = newline < 0 ? text.length : newline;
-    const contentEnd = text[lineEnd - 1] === '\r' ? lineEnd - 1 : lineEnd;
-    const line = text.slice(cursor, contentEnd);
+  for (; index < lines.length; index++) {
+    const { start, contentEnd } = lines[index];
+    const line = text.slice(start, contentEnd);
     if (/^[\t ]*$/.test(line)) {
       if (lastContentEnd === null) return null;
     } else {
@@ -125,9 +161,8 @@ function indentedCodeEnd(text: string, start: number): number | null {
       if (columns < 4) return lastContentEnd;
       lastContentEnd = contentEnd;
     }
-    if (newline < 0) return lastContentEnd;
-    cursor = newline + 1;
   }
+  return lastContentEnd;
 }
 
 function rawHtmlOpening(
@@ -151,7 +186,8 @@ function rawHtmlOpening(
 function rawHtmlSpan(
   text: string,
   start: number,
-  missingClosers: Map<string, number>
+  missingClosers: Map<string, number>,
+  lines: readonly DocumentLine[]
 ): LiteralSpan | null {
   const opening = rawHtmlOpening(text, start, missingClosers);
   if (!opening) return null;
@@ -159,19 +195,17 @@ function rawHtmlSpan(
   closing.lastIndex = opening.end;
   const matched = closing.exec(text);
   const closingEnd = matched ? matched.index + matched[0].length : text.length;
-  const newline = text.indexOf('\n', closingEnd);
-  const lineEnd = newline < 0 ? text.length : newline;
-  const end = text[lineEnd - 1] === '\r' ? lineEnd - 1 : lineEnd;
+  const end = lines[containingLine(lines, closingEnd)].contentEnd;
   return { bodyStart: opening.end, bodyEnd: end, end };
 }
 
 /** A blank line ends complete inline resources and inline math/code paragraphs. */
 function blankLineAfter(text: string, cursor: number): boolean {
-  if (text[cursor] !== '\n') return false;
-  let next = cursor + 1;
-  while (text[next] === ' ' || text[next] === '\t' || text[next] === '\r')
-    next++;
-  return text[next] === '\n';
+  if (text[cursor] !== '\n' && text[cursor] !== '\r') return false;
+  let next =
+    cursor + (text[cursor] === '\r' && text[cursor + 1] === '\n' ? 2 : 1);
+  while (text[next] === ' ' || text[next] === '\t') next++;
+  return text[next] === '\n' || text[next] === '\r';
 }
 
 /** Read only a complete link resource after a previously matched label. */
@@ -241,28 +275,24 @@ function linkResourceEnd(text: string, start: number): number | null {
 function inlineLiteralSpans(
   text: string,
   delimiter: '`' | '$',
-  missingClosers: Map<string, number>
+  missingClosers: Map<string, number>,
+  lines: readonly DocumentLine[]
 ): Map<number, LiteralSpan> {
   const spans = new Map<number, LiteralSpan>();
   let segmentStart = 0;
-  let lineStart = 0;
-  for (;;) {
-    const newline = text.indexOf('\n', lineStart);
-    const lineEnd = newline < 0 ? text.length : newline;
+  for (const { start: lineStart, contentEnd: lineEnd, end } of lines) {
     const line = text.slice(lineStart, lineEnd);
     if (ATX_HEADING_LINE.test(line)) {
       indexSegment(segmentStart, lineStart);
       indexSegment(lineStart, lineEnd);
-      segmentStart = newline < 0 ? text.length : newline + 1;
+      segmentStart = end;
     } else if (
       isInlineCodeBoundaryLine(line) ||
       rawHtmlOpening(text, lineStart, missingClosers)
     ) {
       indexSegment(segmentStart, lineStart);
-      segmentStart = newline < 0 ? text.length : newline + 1;
+      segmentStart = end;
     }
-    if (newline < 0) break;
-    lineStart = newline + 1;
   }
   indexSegment(segmentStart, text.length);
   return spans;
@@ -301,43 +331,146 @@ function inlineLiteralSpans(
   }
 }
 
-/** Complete code spans are bounded even if their example marker never closes. */
-function codeLiteralSpan(
-  text: string,
-  start: number,
-  inlineSpans: ReadonlyMap<number, LiteralSpan>
-): LiteralSpan | null {
-  const character = text[start];
-  let openingEnd = start;
-  while (text[openingEnd] === character) openingEnd++;
-  const size = openingEnd - start;
-  let prefix = start;
-  while (prefix > 0 && start - prefix < 3 && text[prefix - 1] === ' ') prefix--;
-  const atLineStart = prefix === 0 || text[prefix - 1] === '\n';
-  if (size >= 3 && atLineStart) {
-    const openingLineEnd = text.indexOf('\n', openingEnd);
-    if (
-      character === '~' ||
-      !text
-        .slice(openingEnd, openingLineEnd < 0 ? text.length : openingLineEnd)
-        .includes('`')
-    ) {
-      const bodyStart = openingLineEnd < 0 ? text.length : openingLineEnd + 1;
-      const closing = new RegExp(`^ {0,3}${character}{${size},}[\t ]*$`);
-      let cursor = bodyStart;
-      while (cursor < text.length) {
-        const newline = text.indexOf('\n', cursor);
-        const end = newline < 0 ? text.length : newline;
-        const line = text.slice(cursor, end).replace(/\r$/, '');
-        if (closing.test(line)) {
-          return { bodyStart, bodyEnd: cursor, end };
-        }
-        cursor = end + 1;
+type ContainerStep = { quote: true } | { indent: number };
+
+/** Read the native quote/list prefix of a fenced block without rewriting its source. */
+function fenceOpening(line: string): {
+  marker: string;
+  size: number;
+  steps: ContainerStep[];
+} | null {
+  let cursor = 0;
+  const steps: ContainerStep[] = [];
+  for (;;) {
+    const beforeSpace = cursor;
+    while (cursor - beforeSpace < 3 && line[cursor] === ' ') cursor++;
+    if (line[cursor] === '>') {
+      steps.push({ quote: true });
+      cursor++;
+      if (line[cursor] === ' ' || line[cursor] === '\t') cursor++;
+      continue;
+    }
+    const list = /^(?:[-+*]|\d{1,9}[.)])(?=[ \t])/.exec(line.slice(cursor));
+    if (list) {
+      cursor += list[0].length;
+      const paddingStart = cursor;
+      while (line[cursor] === ' ' || line[cursor] === '\t') cursor++;
+      if (cursor - paddingStart > 4) cursor = paddingStart + 1;
+      let columns = 0;
+      for (const character of line.slice(beforeSpace, cursor))
+        columns += character === '\t' ? 4 - (columns % 4) : 1;
+      steps.push({ indent: columns });
+      continue;
+    }
+    const fence = /^(`{3,})([^`]*$)|^(~{3,})(.*$)/.exec(line.slice(cursor));
+    const run = fence?.[1] ?? fence?.[3];
+    return run ? { marker: run[0], size: run.length, steps } : null;
+  }
+}
+
+function containerContentStart(
+  line: string,
+  steps: readonly ContainerStep[]
+): number | null {
+  let cursor = 0;
+  for (const step of steps) {
+    if ('quote' in step) {
+      const beforeSpace = cursor;
+      while (cursor - beforeSpace < 3 && line[cursor] === ' ') cursor++;
+      if (line[cursor++] !== '>') return null;
+      if (line[cursor] === ' ' || line[cursor] === '\t') cursor++;
+    } else {
+      let columns = 0;
+      while (columns < step.indent) {
+        if (line[cursor] === ' ') columns++;
+        else if (line[cursor] === '\t') columns += 4 - (columns % 4);
+        else return null;
+        cursor++;
       }
-      return { bodyStart, bodyEnd: text.length, end: text.length };
     }
   }
-  return character === '`' ? (inlineSpans.get(start) ?? null) : null;
+  return cursor;
+}
+
+function fencedCodeSpan(
+  text: string,
+  lines: readonly DocumentLine[],
+  index: number
+): LiteralSpan | null {
+  const openingLine = lines[index];
+  const opening = fenceOpening(
+    text.slice(openingLine.start, openingLine.contentEnd)
+  );
+  if (!opening) return null;
+  const closing = new RegExp(
+    `^ {0,3}${opening.marker}{${opening.size},}[\\t ]*$`
+  );
+  for (let at = index + 1; at < lines.length; at++) {
+    const line = lines[at];
+    const value = text.slice(line.start, line.contentEnd);
+    const contentStart = containerContentStart(value, opening.steps);
+    if (contentStart === null) {
+      if (/^[\t ]*$/.test(value)) continue;
+      return {
+        bodyStart: openingLine.end,
+        bodyEnd: line.start,
+        end: line.start,
+      };
+    }
+    if (closing.test(value.slice(contentStart)))
+      return {
+        bodyStart: openingLine.end,
+        bodyEnd: line.start,
+        end: line.contentEnd,
+      };
+  }
+  return { bodyStart: openingLine.end, bodyEnd: text.length, end: text.length };
+}
+
+const HTML_BLOCK_TAGS = new Set(
+  'address article aside base basefont blockquote body caption center col colgroup dd details dialog dir div dl dt fieldset figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main menu menuitem nav noframes ol optgroup option p param search section summary table tbody td tfoot th thead title tr track ul'.split(
+    ' '
+  )
+);
+
+/** Native ordinary HTML blocks stop at a blank line, after any complete opening token. */
+function ordinaryHtmlSpan(
+  text: string,
+  lines: readonly DocumentLine[],
+  index: number,
+  missingClosers: Map<string, number>
+): LiteralSpan | null {
+  const line = lines[index];
+  const source = text.slice(line.start, line.contentEnd);
+  const tag = /^ {0,3}<\/?([A-Za-z][A-Za-z0-9-]*)(?=[ \t/>]|$)/.exec(source);
+  if (!tag) return null;
+  const tokenStart = line.start + source.indexOf('<');
+  const tokenEnd = htmlLiteralEnd(text, tokenStart, missingClosers);
+  if (!HTML_BLOCK_TAGS.has(tag[1].toLowerCase())) {
+    const previous = lines[index - 1];
+    if (
+      (previous &&
+        !/^[\t ]*$/.test(text.slice(previous.start, previous.contentEnd))) ||
+      tokenEnd === null ||
+      tokenEnd > line.contentEnd ||
+      !/^[\t ]*$/.test(text.slice(tokenEnd, line.contentEnd))
+    )
+      return null;
+  }
+  const bodyStart = tokenEnd ?? line.start;
+  for (
+    let at = Math.max(index + 1, containingLine(lines, bodyStart));
+    at < lines.length;
+    at++
+  ) {
+    const next = lines[at];
+    if (
+      next.start >= bodyStart &&
+      /^[\t ]*$/.test(text.slice(next.start, next.contentEnd))
+    )
+      return { bodyStart, bodyEnd: next.start, end: next.start };
+  }
+  return { bodyStart, bodyEnd: text.length, end: text.length };
 }
 
 /**
@@ -347,10 +480,14 @@ function codeLiteralSpan(
  * Raw readers remain available when the caller needs opaque markers without Markdown context.
  */
 export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
+  // Documents without an opening cannot produce a marker or need literal indexes.
+  if (!text.includes('{{')) return [];
   const markers: VariableMarker[] = [];
   const missingHtmlClosers = new Map<string, number>();
-  const inlineSpans = inlineLiteralSpans(text, '`', missingHtmlClosers);
-  const mathSpans = inlineLiteralSpans(text, '$', missingHtmlClosers);
+  const lines = documentLines(text);
+  const lineStarts = new Map(lines.map((line, index) => [line.start, index]));
+  const inlineSpans = inlineLiteralSpans(text, '`', missingHtmlClosers, lines);
+  const mathSpans = inlineLiteralSpans(text, '$', missingHtmlClosers, lines);
   const labels: { image: boolean; active: boolean }[] = [];
   const activeLinkLabels = new Set<{ image: boolean; active: boolean }>();
   const collectLiteral = (start: number, end: number) => {
@@ -379,26 +516,40 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
   };
   let cursor = 0;
   while (cursor < text.length) {
-    if (cursor === 0 || text[cursor - 1] === '\n') {
-      const previousStart = text.lastIndexOf('\n', cursor - 2) + 1;
+    const lineIndex = lineStarts.get(cursor);
+    if (lineIndex !== undefined) {
+      const previous = lines[lineIndex - 1];
       if (
-        cursor === 0 ||
-        /^[\t \r]*$/.test(text.slice(previousStart, cursor - 1))
+        !previous ||
+        /^[\t ]*$/.test(text.slice(previous.start, previous.contentEnd))
       ) {
         labels.length = 0;
         activeLinkLabels.clear();
       }
-      const indentedEnd = indentedCodeEnd(text, cursor);
+      const fence = fencedCodeSpan(text, lines, lineIndex);
+      if (fence) {
+        collectLiteral(cursor, fence.bodyEnd);
+        cursor = fence.end;
+        continue;
+      }
+      const indentedEnd = indentedCodeEnd(text, lines, lineIndex);
       if (indentedEnd !== null) {
         collectLiteral(cursor, indentedEnd);
         cursor = indentedEnd;
         continue;
       }
-      const rawHtml = rawHtmlSpan(text, cursor, missingHtmlClosers);
+      const rawHtml = rawHtmlSpan(text, cursor, missingHtmlClosers, lines);
       if (rawHtml) {
         collectLiteral(cursor, rawHtml.bodyStart);
         collectLiteral(rawHtml.bodyStart, rawHtml.bodyEnd);
         cursor = rawHtml.end;
+        continue;
+      }
+      const html = ordinaryHtmlSpan(text, lines, lineIndex, missingHtmlClosers);
+      if (html) {
+        collectLiteral(cursor, html.bodyStart);
+        collectLiteral(html.bodyStart, html.bodyEnd);
+        cursor = html.end;
         continue;
       }
     }
@@ -470,7 +621,7 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
       continue;
     }
     if (text[cursor] === '`' || text[cursor] === '~') {
-      const span = codeLiteralSpan(text, cursor, inlineSpans);
+      const span = text[cursor] === '`' ? inlineSpans.get(cursor) : undefined;
       if (span) {
         collectLiteral(cursor, span.bodyEnd);
         cursor = span.end;
