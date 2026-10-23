@@ -167,6 +167,10 @@ const result = processor.processSync(`
 
 ### 变量名
 
+以下兼容规则沿用 AI 师傅授课引擎的现有实现，比
+[MarkdownFlow 公开规范](https://markdownflow.ai/docs/zh/specification/variables/)
+目前列出的字母、数字和下划线规则更宽。
+
 变量名与授课引擎使用同一条 `[^{}\s]+` 规则：非空，不含空白或花括号，保留 Unicode
 以及 `?`、`？`、`:`、`/`、`|`、`...` 等标点。`{{ name }}` 中变量名两端的空白会被去掉，
 内部字符、大小写与标点不会被归一化。空白采用 Python 的定义，包含 U+0085、U+001C–001F；

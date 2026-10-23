@@ -177,6 +177,10 @@ The first separator type encountered determines the parsing mode:
 
 ### Variable names
 
+The compatibility rule below follows the existing AI-Shifu teaching engine. It is broader than
+the letters/numbers/underscore rule currently documented in the
+[public MarkdownFlow specification](https://markdownflow.ai/docs/specification/variables/).
+
 Variable names follow the teaching engine's `[^{}\s]+` rule: they are nonempty and contain no
 whitespace or braces. Unicode and punctuation such as `?`, `？`, `:`, `/`, `|`, and `...` are
 preserved. Padding inside `{{ name }}` is trimmed; case and punctuation are not normalized.
