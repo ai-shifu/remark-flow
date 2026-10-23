@@ -879,7 +879,17 @@ test('code spans and escaped braces do not claim a following real code fence', (
 test('inline lookahead preserves container boundaries and marker-first ownership', () => {
   const question = '?[%{{ real }} A|B]';
   for (const delimiter of ['`', '$']) {
-    for (const boundary of ['> ', '- ', '1. ', '---\n', '<div>\n']) {
+    for (const boundary of [
+      '> ',
+      '- ',
+      '1. ',
+      '---\n',
+      '<div>\n',
+      '=\n',
+      '===\n',
+      '-\n',
+      '--\n',
+    ]) {
       const source = `Text ${delimiter}{{ unfinished\n${boundary}${delimiter} end\n\n${question}`;
       for (const plugin of [
         remarkFlow,

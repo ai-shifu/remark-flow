@@ -75,6 +75,7 @@ const MAX_LINK_DESTINATION_DEPTH = 32;
 const ATX_HEADING_LINE = /^ {0,3}#{1,6}(?:[ \t]|$)/;
 const THEMATIC_BREAK_LINE =
   /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/;
+const SETEXT_UNDERLINE_LINE = /^ {0,3}(?:=+|-+)[\t ]*$/;
 const CONTAINER_INTERRUPT_LINE = /^ {0,3}(?:>|(?:[-+*]|1[.)])[ \t]+[^ \t])/;
 const INLINE_CODE_BREAK_LINE =
   /^[ \t]*\r?$|^ {0,3}(?:`{3,}[^`\r\n]*|~{3,}[^\r\n]*)\r?$/;
@@ -83,6 +84,7 @@ const INLINE_CODE_BREAK_LINE =
 export const isInlineCodeBoundaryLine = (line: string): boolean =>
   INLINE_CODE_BREAK_LINE.test(line) ||
   ATX_HEADING_LINE.test(line) ||
+  SETEXT_UNDERLINE_LINE.test(line) ||
   THEMATIC_BREAK_LINE.test(line) ||
   CONTAINER_INTERRUPT_LINE.test(line) ||
   ordinaryHtmlInterrupt(line);

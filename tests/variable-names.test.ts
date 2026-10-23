@@ -734,6 +734,20 @@ test('returns no marker ranges for a large literal document without openings', (
 
 describe('document container, ordinary HTML and line-ending boundaries', () => {
   test.each(['\n', '\r\n', '\r'])(
+    'does not pair code or math across a Setext underline with %j',
+    eol => {
+      for (const delimiter of ['`', '$']) {
+        for (const underline of ['=', '===', '-', '--']) {
+          const source = `Text ${delimiter}{{ unfinished${eol}${underline}${eol}${delimiter} end${eol}${eol}?[%{{ real }} A|B]`;
+          expect(extractVariableNames(source)).toEqual([]);
+        }
+        const continued = `Text ${delimiter}{{ unfinished${eol}== ordinary text${eol}${delimiter} end${eol}${eol}?[%{{ real }} A|B]`;
+        expect(extractVariableNames(continued)).toEqual(['real']);
+      }
+    }
+  );
+
+  test.each(['\n', '\r\n', '\r'])(
     'bounds reference resources and completed blocks with %j',
     eol => {
       const question = '?[%{{ real }} A|B]';
