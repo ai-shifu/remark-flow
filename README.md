@@ -240,6 +240,8 @@ when a name ends with a single `}`: `{{ question} }}` preserves `question}`, whe
 Tokenized trees preserve raw NUL provenance, so `parse` followed by `runSync` rejects invalid
 NUL-containing names even without passing the source again. Literal U+FFFD remains a valid key
 character. Token serialization also removes block quote and list prefixes from multiline markers.
+Block-looking text inside a multiline marker remains part of its name; a real enclosing code
+fence still keeps its contents literal. Surrounding prose retains its paragraph boundaries.
 An external tree that already lost the distinction between NUL and U+FFFD cannot recover it.
 
 ## 📖 API Reference

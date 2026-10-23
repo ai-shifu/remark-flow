@@ -575,6 +575,92 @@ test('a closed marker does not make an unclosed interaction own subsequent Markd
   }
 });
 
+test('multiline markers own block-looking names while actual outer code remains code', () => {
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const key of ['\u0060\u0060\u0060key', '~~~key', '# key', '- key']) {
+      const cases = [
+        { source: `{{\n${key}\n}} ?[A|B]`, buttons: ['A', 'B'], paragraphs: 1 },
+        {
+          source: `?[%{{\n${key}\n}} A|B]`,
+          key,
+          buttons: ['A', 'B'],
+          paragraphs: 1,
+        },
+        {
+          source: `Before\n{{\n${key}\n}} ?[A|B]\nAfter`,
+          buttons: ['A', 'B'],
+          paragraphs: 1,
+        },
+        {
+          source: `{{bad\n${key}\n}} ?[A|B]`,
+          buttons: ['A', 'B'],
+          paragraphs: 1,
+        },
+        { source: `?[%{{bad\n${key}\n}} A|B]`, paragraphs: 1 },
+        { source: `{{\n${key}\n?[A|B]`, paragraphs: 1 },
+        { source: `{{\n${key}\n?[A|B]\n`, paragraphs: 1 },
+        {
+          source: `\u0060\u0060\u0060\n{{\n${key}\n}} ?[A|B]\n\u0060\u0060\u0060\n?[C|D]`,
+          buttons: ['C', 'D'],
+          paragraphs: 1,
+          codes: 1,
+        },
+      ];
+      for (const sample of cases) {
+        for (const wrap of containers) {
+          const source = wrap(sample.source);
+          for (const value of [
+            source,
+            Buffer.from(source),
+            new TextEncoder().encode(source),
+          ]) {
+            const tree = render({ value }, plugin);
+            const found = interactions(tree);
+            assert.equal(found.length, sample.buttons ? 1 : 0, source);
+            if (sample.buttons) {
+              assert.deepEqual(found[0].buttonTexts, sample.buttons, source);
+              assert.equal(found[0].variableName, sample.key, source);
+            }
+            const types = [];
+            const walk = node => {
+              types.push(node.type);
+              assert.ok(
+                !node.data?.flowOpaqueParagraph,
+                'temporary flow metadata is removed'
+              );
+              (node.children ?? []).forEach(walk);
+            };
+            walk(tree);
+            assert.equal(
+              types.filter(type => type === 'code').length,
+              sample.codes ?? 0,
+              source
+            );
+            assert.equal(
+              types.filter(type => type === 'paragraph').length,
+              sample.paragraphs,
+              source
+            );
+          }
+        }
+      }
+    }
+  }
+});
+
 test('shared marker boundaries are atomic in every actual Markdown plugin path', () => {
   for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
     for (const sample of contractCases.boundary_cases) {

@@ -29,7 +29,7 @@ type Code = number | null;
 type State = (code: Code) => State | undefined;
 
 interface Effects {
-  enter(type: string): unknown;
+  enter(type: string, fields?: Partial<Token>): Token;
   exit(type: string): Token;
   consume(code: Code): void;
 }
@@ -37,6 +37,9 @@ interface Effects {
 interface Token {
   type: string;
   flowNullOffsets?: number[];
+  contentType?: string;
+  previous?: Token;
+  next?: Token;
 }
 
 interface TokenizeContext {
@@ -44,7 +47,15 @@ interface TokenizeContext {
 }
 
 interface CompileContext {
-  enter(node: { type: string; value: string }, token: Token): unknown;
+  enter(
+    node: {
+      type: string;
+      value?: string;
+      children?: unknown[];
+      data?: Record<string, unknown>;
+    },
+    token: Token
+  ): unknown;
   exit(token: Token): unknown;
   sliceSerialize(token: Token): string;
   stack: Array<{
@@ -63,6 +74,7 @@ interface CompileContext {
  */
 export const INTERACTION_NODE = 'flowInteraction';
 export const VARIABLE_NODE = 'flowVariableMarker';
+export const OPAQUE_PARAGRAPH = 'flowOpaqueParagraph';
 
 /**
  * Set on the root of a tree parsed with this construct registered.
@@ -321,9 +333,80 @@ function tokenizeVariable(
   }
 }
 
+/** Keep block-looking lines inside a multiline marker in the same inline text stream. */
+function tokenizeOpaqueParagraph(
+  this: unknown,
+  effects: Effects,
+  ok: State,
+  nok: State
+): State {
+  let marker = false;
+  let brace = false;
+  let multiline = false;
+  let chunk: Token;
+  return start;
+
+  function start(code: Code): State | undefined {
+    effects.enter(OPAQUE_PARAGRAPH);
+    chunk = effects.enter('chunkText', { contentType: 'text' });
+    return content(code);
+  }
+
+  function content(code: Code): State | undefined {
+    if (code === null || isLineEnding(code)) {
+      if (marker && code !== null) {
+        multiline = true;
+        brace = false;
+        effects.consume(code);
+        effects.exit('chunkText');
+        return nextLine;
+      }
+      if (!multiline) return nok(code);
+      effects.exit('chunkText');
+      effects.exit(OPAQUE_PARAGRAPH);
+      return ok(code);
+    }
+    effects.consume(code);
+    if (marker) {
+      if (brace && code === RIGHT_BRACE) {
+        marker = false;
+        brace = false;
+      } else {
+        brace = code === RIGHT_BRACE;
+      }
+    } else if (brace && code === LEFT_BRACE) {
+      marker = true;
+      brace = false;
+    } else {
+      brace = code === LEFT_BRACE;
+    }
+    return content;
+  }
+
+  function nextLine(code: Code): State | undefined {
+    if (code === null) {
+      effects.exit(OPAQUE_PARAGRAPH);
+      return ok(code);
+    }
+    chunk.next = effects.enter('chunkText', {
+      contentType: 'text',
+      previous: chunk,
+    });
+    chunk = chunk.next;
+    return content(code);
+  }
+}
+
 /** The micromark syntax extension: `?` may open an interaction wherever inline text is read. */
 export function interactionSyntax(): Record<string, unknown> {
   return {
+    flow: {
+      null: {
+        name: OPAQUE_PARAGRAPH,
+        concrete: true,
+        tokenize: tokenizeOpaqueParagraph,
+      },
+    },
     text: {
       [QUESTION_MARK]: {
         name: 'flowInteraction',
@@ -343,6 +426,16 @@ export function interactionFromMarkdown(): Record<string, unknown> {
       },
     ],
     enter: {
+      [OPAQUE_PARAGRAPH](this: CompileContext, token: Token) {
+        this.enter(
+          {
+            type: 'paragraph',
+            children: [],
+            data: { [OPAQUE_PARAGRAPH]: true },
+          },
+          token
+        );
+      },
       [VARIABLE](this: CompileContext, token: Token) {
         this.enter({ type: VARIABLE_NODE, value: '' }, token);
       },
@@ -351,6 +444,9 @@ export function interactionFromMarkdown(): Record<string, unknown> {
       },
     },
     exit: {
+      [OPAQUE_PARAGRAPH](this: CompileContext, token: Token) {
+        this.exit(token);
+      },
       [VARIABLE](this: CompileContext, token: Token) {
         const node = this.stack[this.stack.length - 1];
         node.value = tokenValue(this, token);
