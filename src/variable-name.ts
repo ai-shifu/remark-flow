@@ -142,19 +142,32 @@ export const isInlineCodeBoundaryLine = (line: string): boolean =>
   INLINE_CODE_BREAK_LINE.test(line);
 
 /** Read a complete HTML token, using CommonMark's tag and attribute name shapes. */
-function htmlLiteralEnd(text: string, start: number): number | null {
+function htmlLiteralEnd(
+  text: string,
+  start: number,
+  missingClosers: Map<string, number>
+): number | null {
+  const findClosing = (closing: string, from: number): number => {
+    const missingFrom = missingClosers.get(closing);
+    if (missingFrom !== undefined && from >= missingFrom) return -1;
+    const end = text.indexOf(closing, from);
+    // A failed search proves this delimiter is absent throughout the remaining
+    // suffix. Repeated malformed openings must not rescan that same suffix.
+    if (end < 0) missingClosers.set(closing, from);
+    return end;
+  };
   for (const [opening, closing] of [
     ['<!--', '-->'],
     ['<![CDATA[', ']]>'],
     ['<?', '?>'],
   ]) {
     if (text.startsWith(opening, start)) {
-      const end = text.indexOf(closing, start + opening.length);
+      const end = findClosing(closing, start + opening.length);
       return end < 0 ? null : end + closing.length;
     }
   }
   if (/^<![A-Za-z]/.test(text.slice(start, start + 3))) {
-    const end = text.indexOf('>', start + 3);
+    const end = findClosing('>', start + 3);
     return end < 0 ? null : end + 1;
   }
   let cursor = start + 1;
@@ -184,7 +197,7 @@ function htmlLiteralEnd(text: string, start: number): number | null {
     while (cursor < text.length && HTML_SPACE.test(text[cursor])) cursor++;
     const quote = text[cursor];
     if (quote === '"' || quote === "'") {
-      const end = text.indexOf(quote, cursor + 1);
+      const end = findClosing(quote, cursor + 1);
       if (end < 0) return null;
       cursor = end + 1;
     } else {
@@ -295,6 +308,7 @@ function codeLiteralSpan(
 export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
   const markers: VariableMarker[] = [];
   const inlineSpans = inlineCodeSpans(text);
+  const missingHtmlClosers = new Map<string, number>();
   const collectLiteral = (start: number, end: number) => {
     const literal = text.slice(start, end);
     let cursor = 0;
@@ -354,7 +368,7 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
       continue;
     }
     if (text[cursor] === '<') {
-      const end = htmlLiteralEnd(text, cursor);
+      const end = htmlLiteralEnd(text, cursor, missingHtmlClosers);
       if (end !== null) {
         collectLiteral(cursor, end);
         cursor = end;

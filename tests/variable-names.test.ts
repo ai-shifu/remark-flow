@@ -440,3 +440,55 @@ describe('variable names in interactions', () => {
     expect(tree.children[0]).toMatchObject({ type: 'text', value: source });
   });
 });
+
+describe('malformed HTML closing searches', () => {
+  test.each([
+    ['<!--', '-->'],
+    ['<![CDATA[', ']]>'],
+    ['<?', '?>'],
+    ['<!A', '>'],
+  ])(
+    'does linear delimiter-search work for repeated %s openings',
+    (opening, closing) => {
+      const source = `${opening.repeat(4096)}{{ visible }}`;
+      const originalIndexOf = String.prototype.indexOf;
+      let searchedCharacters = 0;
+      const search = jest
+        .spyOn(String.prototype, 'indexOf')
+        .mockImplementation(function (
+          this: string,
+          needle: string,
+          from = 0
+        ): number {
+          if (needle === closing)
+            searchedCharacters += Math.max(0, this.length - from);
+          return originalIndexOf.call(this, needle, from);
+        });
+      let names: string[];
+      try {
+        names = extractVariableNames(source);
+      } finally {
+        search.mockRestore();
+      }
+      expect(names).toEqual(['visible']);
+      expect(searchedCharacters).toBeLessThanOrEqual(source.length);
+    }
+  );
+
+  test('keeps complete HTML bodies and resets failed-search knowledge for each document', () => {
+    expect(extractVariableNames('<!-- {{ incomplete }}')).toEqual([
+      'incomplete',
+    ]);
+    expect(
+      extractVariableNames('<!-- {{ complete }} --> {{ outside }}')
+    ).toEqual(['complete', 'outside']);
+    expect(
+      extractVariableNames(
+        `${'<!--'.repeat(4096)}{{ inside }} --> {{ outside }}`
+      )
+    ).toEqual(['inside', 'outside']);
+    expect(
+      extractVariableNames('<span title="{{ attribute }}"> {{ outside }}')
+    ).toEqual(['attribute', 'outside']);
+  });
+});
