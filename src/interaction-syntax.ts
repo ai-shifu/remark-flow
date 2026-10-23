@@ -463,6 +463,7 @@ function tokenizeOpaqueBlock(
   let mathOpeningCrossedBoundary = false;
   let previousCode: Code = null;
   const labels: Array<Token & { inactive?: boolean }> = [];
+  const activeLinkLabels = new Set<Token & { inactive?: boolean }>();
   const rejectedInlineOpenings = new Set<number>();
   let chunk: Token;
   let outer: Token;
@@ -592,6 +593,7 @@ function tokenizeOpaqueBlock(
       }
       if (code === RIGHT_BRACKET && labels.length && labelEnd) {
         closingLabel = labels.pop();
+        if (closingLabel) activeLinkLabels.delete(closingLabel);
         if (!closingLabel?.inactive) {
           checkedSize = 0;
           return effects.check(
@@ -624,10 +626,12 @@ function tokenizeOpaqueBlock(
     effects.consume(code);
     previousCode = code;
     if (!marker && code === LEFT_BRACKET) {
-      labels.push({
+      const label = {
         type: prior === EXCLAMATION_MARK ? 'labelImage' : 'labelLink',
         end: context.now(),
-      });
+      };
+      labels.push(label);
+      if (label.type === 'labelLink') activeLinkLabels.add(label);
     }
     const wasMarker = marker;
     if (marker) {
@@ -927,12 +931,8 @@ function tokenizeOpaqueBlock(
 
   function skipLinkResource(code: Code): State | undefined {
     if (closingLabel?.type === 'labelLink') {
-      for (let index = labels.length - 1; index >= 0; index--) {
-        const label = labels[index];
-        if (label.type !== 'labelLink') continue;
-        if (label.inactive) break;
-        label.inactive = true;
-      }
+      for (const label of activeLinkLabels) label.inactive = true;
+      activeLinkLabels.clear();
     }
     interaction = false;
     return skipChecked(code);

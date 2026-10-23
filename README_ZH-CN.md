@@ -188,15 +188,17 @@ U+2028、U+2029，也不能包含标记结束符 `}}`。
 `VARIABLE_ASSIGNMENT_SOURCE`，避免各自维护不同的变量正则。
 
 `extractVariableNames(text)` 按源码出现顺序去重提取 `{{变量名}}`（包括 `%{{变量名}}`）；
-它保留现有全文扫描范围，不排除代码块或注释，仍提取代码和 HTML 示例内完整的标记；不完整的
-示例标记不会越过代码或 HTML 的闭合边界，遮住后续变量。Markdown 转义的左花括号不会开启
+它保留现有全文扫描范围，不排除代码块或注释，仍提取代码、HTML、公式和链接资源示例内完整的标记；不完整的
+示例标记不会越过当前字面上下文的闭合边界，遮住后续变量。该范围包括围栏的信息字符串、
+在文档起点或空行后开始的缩进代码块，以及 `script`、`style`、`pre`、`textarea` 原始 HTML 块。
+Markdown 转义的左花括号不会开启
 文档标记；下方 raw reader API 不解释这些 Markdown 上下文。`createVariableExpressionRegex('gu')`
 返回独立正则，第一捕获组仍是合法且去掉两端空白后的变量名，适合验证完整标记。
 
 编辑器高亮、占位替换或文档分段统一使用 `findDocumentVariableMarkers(text)`，返回按源码顺序
 排列的 `{ start, end, rawName, name }`。`start`、`end` 是原文 UTF-16 偏移，可直接用于
 `text.slice(start, end)`；结果保留重复和非法标记。未闭合标记的 `name` 为 `null`，范围到
-当前代码或 HTML 字面上下文的边界为止；在这些上下文之外则到文档结尾。
+当前字面上下文的边界为止；在这些上下文之外则到文档结尾。
 `extractVariableNames` 复用相同范围，提取去重后的非空合法名称。
 
 只扫描 raw token 时用 `findVariableMarkers(text)`，按第一个 `}}` 一次读取整段标记，不把键内部的 `{{`

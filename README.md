@@ -227,13 +227,15 @@ formatVariableAssignment('Which [path] | level?'); // '%{{ Which [path] | level?
 
 `extractVariableNames` scans the supplied source in order, including code fences and comments,
 and returns each name once. It does not change the host's policy for which source to inspect.
-Complete markers inside code or HTML examples are still collected, while incomplete examples stay
-inside their closing literal boundary and cannot hide a later variable. Markdown-escaped opening
+Complete markers inside code, HTML, math, or link-resource examples are still collected, while incomplete examples stay
+inside their closing literal boundary and cannot hide a later variable. This includes fence info
+strings, indented code that starts a block, and raw `script`, `style`, `pre`, or `textarea` blocks.
+Markdown-escaped opening
 braces do not start a document marker. The raw readers below do not interpret Markdown context.
 Use `findDocumentVariableMarkers(text)` when editors or document readers need marker ranges.
 It returns `{ start, end, rawName, name }` in source order, with original UTF-16 offsets suitable
 for `text.slice(start, end)`. It retains duplicates and invalid markers. Unclosed markers have
-`name: null` and end at their code/HTML boundary, or at document EOF when outside a literal span.
+`name: null` and end at their literal boundary, or at document EOF when outside a literal span.
 `extractVariableNames` uses these same ranges and returns only unique, non-null names.
 
 Use `findVariableMarkers` for raw token scanning: each raw marker is read only once, so a
@@ -257,8 +259,8 @@ NUL-containing names even without passing the source again. Literal U+FFFD remai
 character. Token serialization also removes block quote and list prefixes from multiline markers.
 Block-looking text inside a multiline marker remains part of its name; a real enclosing code
 fence still keeps its contents literal. ATX and Setext headings retain their heading level, and
-surrounding prose retains its paragraph boundaries. Marker-looking text inside inline code or
-HTML stays in that Markdown context.
+surrounding prose retains its paragraph boundaries. Marker-looking text inside inline code, HTML,
+math, or link resources stays in that Markdown context.
 An external tree that already lost the distinction between NUL and U+FFFD cannot recover it.
 
 ## 📖 API Reference

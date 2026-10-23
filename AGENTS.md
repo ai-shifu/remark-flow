@@ -310,7 +310,7 @@ const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
   Unicode Cc controls, U+2028, U+2029 and the literal terminator `}}` are forbidden inside names.
 - Reuse `src/variable-name.ts`. Markdown document scanning must use
   `findDocumentVariableMarkers` for source ranges, or `extractVariableNames` for unique names.
-  They preserve code/HTML literal boundaries and Markdown-escaped openings. Use
+  They preserve code, HTML, math and link-resource literal boundaries and Markdown-escaped openings. Use
   `findVariableMarkers` only for raw token scanning: each marker is claimed once through its
   first literal `}}`, including invalid bodies and inner `{{`, without document context.
 - Padding means Python's set, not JavaScript's `\s` or `String.trim()`; U+FEFF remains in keys.

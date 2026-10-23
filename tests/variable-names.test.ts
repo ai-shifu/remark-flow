@@ -567,3 +567,162 @@ describe('document block literal boundaries', () => {
     }
   );
 });
+
+describe('complete inline math and link-resource boundaries', () => {
+  test.each([
+    '$x {{ unfinished$',
+    '$$x {{ unfinished$$',
+    '$x {{ example }}$',
+    '$$x {{ example }}$$',
+    '[label](url "{{")',
+    "[label](url '{{')",
+    '[label](url ({{))',
+    '[label](url(path) "{{")',
+    '[label](url<path "{{")',
+    '[label](url (({{))',
+    '[label]( (url(path)) "{{")',
+    '[label](<url(path)> "{{")',
+    '[label](url "{{ example }}")',
+    '[label {{ name }}](url "{{")',
+    '[outer ![inner](u)](u "{{")',
+    '![outer [inner](u)](u "{{")',
+  ])('bounds a complete literal without hiding a later key: %s', prefix => {
+    const names = prefix.includes('{{ example }}')
+      ? ['example', 'real']
+      : prefix.includes('{{ name }}')
+        ? ['name', 'real']
+        : ['real'];
+    const source = `${prefix}\n\n?[%{{ real }} A|B]`;
+    expect(extractVariableNames(source)).toEqual(names);
+    const markers = findDocumentVariableMarkers(source);
+    expect(markers[markers.length - 1]?.name).toBe('real');
+  });
+
+  test.each([
+    '$x {{ unfinished',
+    '[outer [inner](u)](u "{{")',
+    String.raw`\[label](url "{{")`,
+    '$x {{ unfinished\n\nend$',
+  ])('does not claim an incomplete or inactive literal: %s', prefix => {
+    expect(extractVariableNames(`${prefix}\n\n?[%{{ real }} A|B]`)).toEqual([]);
+  });
+
+  test('keeps raw-marker priority and native math closing semantics', () => {
+    expect(extractVariableNames('{{ $x [label](url) }}')).toEqual([
+      '$x [label](url)',
+    ]);
+    expect(extractVariableNames(String.raw`$x \$ {{ real }}`)).toEqual([
+      'real',
+    ]);
+    expect(
+      extractVariableNames(
+        'Show `{{\n<script>\n` then ?[%{{ hidden }} A|B]\n</script>\n{{ real }}'
+      )
+    ).toEqual(['real']);
+  });
+});
+
+test('bounds resource scanning work when nested destinations never close', () => {
+  const originalTest = RegExp.prototype.test;
+  for (const ending of ['', ')']) {
+    const source = '[x]('.repeat(4096) + ending;
+    let visits = 0;
+    const spy = jest
+      .spyOn(RegExp.prototype, 'test')
+      .mockImplementation(function (this: RegExp, value: string): boolean {
+        if (this.source === String.raw`[\t\n\r ]`) visits++;
+        return originalTest.call(this, value);
+      });
+    try {
+      expect(extractVariableNames(source)).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+    // Native destination nesting is capped at 32; repeated failed candidates
+    // may revisit only that bounded prefix, not the whole remaining document.
+    expect(visits).toBeLessThan(source.length * 128);
+  }
+});
+
+test.each([2, 3, 4])(
+  'retains an escaped-first-dollar suffix of width %s',
+  width => {
+    const source = `Show \\${'$'.repeat(width)}x {{ unfinished${'$'.repeat(width - 1)} then {{ real }}`;
+    expect(extractVariableNames(source)).toEqual(['real']);
+  }
+);
+
+test('an unfinished link resource leaves a raw marker in its original scope', () => {
+  expect(extractVariableNames('[label](url "{{\n\n?[%{{ real }} A|B]')).toEqual(
+    ['?[%{{ real']
+  );
+});
+
+test.each(['`', '$'])(
+  'does not pair %s across ATX heading boundaries',
+  delimiter => {
+    for (const source of [
+      `# Heading ${delimiter}{{\nq${delimiter} then ?[%{{ real }} A|B]`,
+      `Show ${delimiter}{{\n# Heading q${delimiter} then ?[%{{ real }} A|B]`,
+    ]) {
+      const name = source
+        .slice(source.indexOf('{{') + 2, source.indexOf('}}'))
+        .trim();
+      expect(extractVariableNames(source)).toEqual([name]);
+      expect(findDocumentVariableMarkers(source)[0]?.name).toBe(name);
+    }
+    expect(
+      extractVariableNames(
+        `# Heading ${delimiter}{{${delimiter} then ?[%{{ real }} A|B]`
+      )
+    ).toEqual(['real']);
+  }
+);
+
+test.each(['script', 'style', 'pre', 'textarea'])(
+  'keeps %s closing-line content in its raw block',
+  tag => {
+    const prefix = `<${tag}>\ncode\n</${tag}> {{ unfinished`;
+    expect(extractVariableNames(`${prefix}\n?[%{{ real }} A|B]`)).toEqual([
+      'real',
+    ]);
+    expect(
+      extractVariableNames(
+        `<${tag}>\ncode\n</${tag}> {{ example }}\n{{ real }}`
+      )
+    ).toEqual(['example', 'real']);
+  }
+);
+
+test('does not invent a title-only resource without a destination', () => {
+  expect(
+    extractVariableNames('[label]( "{{ words")\n\n?[%{{ real }} A|B]')
+  ).toEqual([]);
+});
+
+test.each([32, 33])(
+  'uses the native destination nesting limit at depth %s',
+  depth => {
+    const destination = '('.repeat(depth) + 'x' + ')'.repeat(depth);
+    const source = `[label](${destination} "{{")\n\n?[%{{ real }} A|B]`;
+    expect(extractVariableNames(source)).toEqual(depth === 32 ? ['real'] : []);
+  }
+);
+
+test.each(['$', '`', '[label](u "'])(
+  'keeps interaction marker bodies raw before %s literal rules',
+  literal => {
+    const source = `?[%{{ q }} A ${literal}{{ y${literal} | B]\n\n?[%{{ real }} C|D]`;
+    expect(extractVariableNames(source)).toEqual(['q']);
+    const markers = findDocumentVariableMarkers(source);
+    expect(markers.map(marker => marker.name)).toEqual(['q', null]);
+  }
+);
+
+test.each(['[', '!['])(
+  'keeps later variables visible after many %s label ancestors and complete links',
+  opening => {
+    const source = `${opening.repeat(4096)}${'[x](u)'.repeat(4096)} {{ real }}`;
+    expect(extractVariableNames(source)).toEqual(['real']);
+  }
+);

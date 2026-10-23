@@ -26,7 +26,7 @@
 import {
   RAW_VARIABLE_MARKER_SOURCE,
   readVariableMarker,
-} from './variable-name';
+} from './variable-marker';
 
 /** A raw marker is opaque even when invalid or incomplete; its operators are always literal. */
 const markerEnd = (text: string, index: number): number | null =>

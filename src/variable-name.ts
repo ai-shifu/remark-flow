@@ -1,131 +1,7 @@
-/**
- * Variable names are opaque Unicode text. Only control characters, line separators and the
- * literal marker terminator are forbidden after trimming the established Python padding set.
- */
-const PYTHON_WHITESPACE_SOURCE =
-  '\\u0009-\\u000d\\u001c-\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000';
+export * from './variable-marker';
 
-// JavaScript's \s and String.trim() differ from Python's whitespace definition: notably,
-// Python includes U+0085 and U+001C–001F but keeps U+FEFF as part of a name. Use one explicit
-// set for the name, marker padding and normalization so keys survive the browser/server trip.
-const CONTROL_SOURCE = '\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029';
-const NAME_CHARACTER_SOURCE = `(?:(?!\\}\\})[^${CONTROL_SOURCE}])`;
-const NAME_EDGE_SOURCE = `(?:(?!\\}\\})[^${CONTROL_SOURCE}${PYTHON_WHITESPACE_SOURCE}])`;
-export const VARIABLE_NAME_SOURCE = `${NAME_EDGE_SOURCE}(?:${NAME_CHARACTER_SOURCE}*?${NAME_EDGE_SOURCE})?`;
-export const VARIABLE_PADDING_SOURCE = `[${PYTHON_WHITESPACE_SOURCE}]*`;
-
-const isPaddingCode = (code: number): boolean =>
-  (code >= 0x09 && code <= 0x0d) ||
-  (code >= 0x1c && code <= 0x20) ||
-  code === 0x85 ||
-  code === 0xa0 ||
-  code === 0x1680 ||
-  (code >= 0x2000 && code <= 0x200a) ||
-  code === 0x2028 ||
-  code === 0x2029 ||
-  code === 0x202f ||
-  code === 0x205f ||
-  code === 0x3000;
-
-/** Trim only the established Python padding set, in linear time; U+FEFF is preserved. */
-export const trimVariablePadding = (raw: string): string => {
-  let start = 0;
-  let end = raw.length;
-  while (start < end && isPaddingCode(raw.charCodeAt(start))) start += 1;
-  while (end > start && isPaddingCode(raw.charCodeAt(end - 1))) end -= 1;
-  return raw.slice(start, end);
-};
-
-/** A variable reference, with its normalized name in the first capture group. */
-export const VARIABLE_REFERENCE_SOURCE = `\\{\\{${VARIABLE_PADDING_SOURCE}(${VARIABLE_NAME_SOURCE})${VARIABLE_PADDING_SOURCE}\\}\\}`;
-
-/** The assignment marker at the beginning of an interaction. */
-export const VARIABLE_ASSIGNMENT_SOURCE = `%${VARIABLE_REFERENCE_SOURCE}`;
-
-// Syntax-only source used when claiming the whole marker before validating its body. It must
-// stop at the first literal `}}`, even if the body is invalid or contains another `{{`.
-export const RAW_VARIABLE_BODY_SOURCE = '(?:(?!\\}\\})[\\s\\S])*';
-export const RAW_VARIABLE_MARKER_SOURCE = `\\{\\{${RAW_VARIABLE_BODY_SOURCE}\\}\\}`;
-
-/** Trim marker padding without changing a name's punctuation, case or Unicode. */
-export const normalizeVariableName = (raw: string): string | null => {
-  const name = trimVariablePadding(raw);
-  if (!name) return null;
-  for (let index = 0; index < name.length; index += 1) {
-    const code = name.charCodeAt(index);
-    if (
-      code <= 0x1f ||
-      (code >= 0x7f && code <= 0x9f) ||
-      code === 0x2028 ||
-      code === 0x2029 ||
-      (code === 0x7d && name.charCodeAt(index + 1) === 0x7d)
-    )
-      return null;
-  }
-  return name;
-};
-
-/** Whether a name, after trimming marker padding, follows the shared grammar. */
-export const isValidVariableName = (raw: string): boolean =>
-  normalizeVariableName(raw) !== null;
-
-/**
- * Create an independent valid-token matcher. Anchor its source when validating a complete
- * token; scan Markdown documents with findDocumentVariableMarkers instead of a restarting regex.
- */
-export const createVariableExpressionRegex = (flags = 'g'): RegExp =>
-  new RegExp(VARIABLE_REFERENCE_SOURCE, flags);
-
-export interface VariableMarker {
-  start: number;
-  end: number;
-  rawName: string;
-  name: string | null;
-}
-
-/** Read exactly one marker at `start`; invalid bodies are still one indivisible token. */
-export const readVariableMarker = (
-  text: string,
-  start = 0
-): VariableMarker | null => {
-  if (!Number.isInteger(start) || start < 0 || !text.startsWith('{{', start))
-    return null;
-  const close = text.indexOf('}}', start + 2);
-  if (close < 0) return null;
-  const rawName = text.slice(start + 2, close);
-  return {
-    start,
-    end: close + 2,
-    rawName,
-    name: normalizeVariableName(rawName),
-  };
-};
-
-/** Scan raw markers once, without treating an opening brace inside a key as another marker. */
-export const findVariableMarkers = (text: string): VariableMarker[] => {
-  const markers: VariableMarker[] = [];
-  let cursor = 0;
-  for (;;) {
-    const start = text.indexOf('{{', cursor);
-    if (start < 0) return markers;
-    const marker = readVariableMarker(text, start);
-    if (!marker) return markers;
-    markers.push(marker);
-    cursor = marker.end;
-  }
-};
-
-/** Padding keeps a final single `}` in the name separate from the closing `}}`. */
-export const formatVariableReference = (raw: string): string | null => {
-  const name = normalizeVariableName(raw);
-  return name === null ? null : `{{ ${name} }}`;
-};
-
-/** Serialize a valid assignment marker with the same padding as an ordinary reference. */
-export const formatVariableAssignment = (raw: string): string | null => {
-  const reference = formatVariableReference(raw);
-  return reference === null ? null : `%${reference}`;
-};
+import { readInteraction } from './escaping';
+import { readVariableMarker, VariableMarker } from './variable-marker';
 
 interface LiteralSpan {
   bodyStart: number;
@@ -134,12 +10,30 @@ interface LiteralSpan {
 }
 
 const HTML_SPACE = /[\t\n\f\r ]/;
+const RESOURCE_SPACE = /[\t\n\r ]/;
+const MARKDOWN_PUNCTUATION = /[!-/:-@[-`{-~]/;
+const MAX_LINK_DESTINATION_DEPTH = 32;
+const ATX_HEADING_LINE = /^ {0,3}#{1,6}(?:[ \t]|$)/;
 const INLINE_CODE_BREAK_LINE =
   /^[ \t]*\r?$|^ {0,3}(?:`{3,}[^`\r\n]*|~{3,}[^\r\n]*)\r?$/;
 
 /** @internal Shared document/flow boundary for an unfinished inline code span. */
 export const isInlineCodeBoundaryLine = (line: string): boolean =>
-  INLINE_CODE_BREAK_LINE.test(line);
+  INLINE_CODE_BREAK_LINE.test(line) || ATX_HEADING_LINE.test(line);
+
+/** Reuse failed suffix searches across malformed literal candidates in one document. */
+function findClosing(
+  text: string,
+  closing: string,
+  from: number,
+  missingClosers: Map<string, number>
+): number {
+  const missingFrom = missingClosers.get(closing);
+  if (missingFrom !== undefined && from >= missingFrom) return -1;
+  const end = text.indexOf(closing, from);
+  if (end < 0) missingClosers.set(closing, from);
+  return end;
+}
 
 /** Read a complete HTML token, using CommonMark's tag and attribute name shapes. */
 function htmlLiteralEnd(
@@ -147,27 +41,23 @@ function htmlLiteralEnd(
   start: number,
   missingClosers: Map<string, number>
 ): number | null {
-  const findClosing = (closing: string, from: number): number => {
-    const missingFrom = missingClosers.get(closing);
-    if (missingFrom !== undefined && from >= missingFrom) return -1;
-    const end = text.indexOf(closing, from);
-    // A failed search proves this delimiter is absent throughout the remaining
-    // suffix. Repeated malformed openings must not rescan that same suffix.
-    if (end < 0) missingClosers.set(closing, from);
-    return end;
-  };
   for (const [opening, closing] of [
     ['<!--', '-->'],
     ['<![CDATA[', ']]>'],
     ['<?', '?>'],
   ]) {
     if (text.startsWith(opening, start)) {
-      const end = findClosing(closing, start + opening.length);
+      const end = findClosing(
+        text,
+        closing,
+        start + opening.length,
+        missingClosers
+      );
       return end < 0 ? null : end + closing.length;
     }
   }
   if (/^<![A-Za-z]/.test(text.slice(start, start + 3))) {
-    const end = findClosing('>', start + 3);
+    const end = findClosing(text, '>', start + 3, missingClosers);
     return end < 0 ? null : end + 1;
   }
   let cursor = start + 1;
@@ -197,7 +87,7 @@ function htmlLiteralEnd(
     while (cursor < text.length && HTML_SPACE.test(text[cursor])) cursor++;
     const quote = text[cursor];
     if (quote === '"' || quote === "'") {
-      const end = findClosing(quote, cursor + 1);
+      const end = findClosing(text, quote, cursor + 1, missingClosers);
       if (end < 0) return null;
       cursor = end + 1;
     } else {
@@ -240,31 +130,119 @@ function indentedCodeEnd(text: string, start: number): number | null {
   }
 }
 
+function rawHtmlOpening(
+  text: string,
+  start: number,
+  missingClosers: Map<string, number>
+): { name: string; end: number } | null {
+  const opening = /^ {0,3}<(script|style|pre|textarea)(?=[\t\n\f\r >])/i.exec(
+    text.slice(start, start + 16)
+  );
+  if (!opening) return null;
+  const end = htmlLiteralEnd(
+    text,
+    start + opening[0].indexOf('<'),
+    missingClosers
+  );
+  return end === null ? null : { name: opening[1], end };
+}
+
 /** Preserve the opening token's attribute scope separately from a raw-text HTML body. */
 function rawHtmlSpan(
   text: string,
   start: number,
   missingClosers: Map<string, number>
 ): LiteralSpan | null {
-  const opening = /^ {0,3}<(script|style|pre|textarea)(?=[\t\n\f\r >])/i.exec(
-    text.slice(start, start + 16)
-  );
+  const opening = rawHtmlOpening(text, start, missingClosers);
   if (!opening) return null;
-  const openingEnd = htmlLiteralEnd(
-    text,
-    start + opening[0].indexOf('<'),
-    missingClosers
-  );
-  if (openingEnd === null) return null;
-  const closing = new RegExp(`</${opening[1]}[ \\t\\r\\n]*>`, 'gi');
-  closing.lastIndex = openingEnd;
+  const closing = new RegExp(`</${opening.name}[ \\t\\r\\n]*>`, 'gi');
+  closing.lastIndex = opening.end;
   const matched = closing.exec(text);
-  const end = matched ? matched.index + matched[0].length : text.length;
-  return { bodyStart: openingEnd, bodyEnd: end, end };
+  const closingEnd = matched ? matched.index + matched[0].length : text.length;
+  const newline = text.indexOf('\n', closingEnd);
+  const lineEnd = newline < 0 ? text.length : newline;
+  const end = text[lineEnd - 1] === '\r' ? lineEnd - 1 : lineEnd;
+  return { bodyStart: opening.end, bodyEnd: end, end };
 }
 
-/** Index same-width inline code closers without pairing across a paragraph or fence. */
-function inlineCodeSpans(text: string): Map<number, LiteralSpan> {
+/** A blank line ends complete inline resources and inline math/code paragraphs. */
+function blankLineAfter(text: string, cursor: number): boolean {
+  if (text[cursor] !== '\n') return false;
+  let next = cursor + 1;
+  while (text[next] === ' ' || text[next] === '\t' || text[next] === '\r')
+    next++;
+  return text[next] === '\n';
+}
+
+/** Read only a complete link resource after a previously matched label. */
+function linkResourceEnd(text: string, start: number): number | null {
+  let cursor = start + 1;
+  const skipSpace = (): boolean => {
+    while (cursor < text.length && RESOURCE_SPACE.test(text[cursor])) {
+      if (blankLineAfter(text, cursor)) return false;
+      cursor++;
+    }
+    return true;
+  };
+  const escaped = () =>
+    text[cursor] === '\\' && MARKDOWN_PUNCTUATION.test(text[cursor + 1] ?? '');
+  if (!skipSpace()) return null;
+  if (text[cursor] === '<') {
+    cursor++;
+    while (cursor < text.length && text[cursor] !== '>') {
+      if (
+        text[cursor] === '\n' ||
+        text[cursor] === '\r' ||
+        text[cursor] === '<'
+      )
+        return null;
+      cursor += escaped() ? 2 : 1;
+    }
+    if (text[cursor] !== '>') return null;
+    cursor++;
+  } else {
+    let depth = 0;
+    while (cursor < text.length && !RESOURCE_SPACE.test(text[cursor])) {
+      if (escaped()) cursor += 2;
+      else if (text[cursor] === '(') {
+        if (++depth > MAX_LINK_DESTINATION_DEPTH) return null;
+        cursor++;
+      } else if (text[cursor] === ')') {
+        if (depth === 0) break;
+        depth--;
+        cursor++;
+      } else {
+        const code = text.charCodeAt(cursor);
+        if (code < 32 || code === 127) return null;
+        cursor++;
+      }
+    }
+    if (depth) return null;
+  }
+  const destinationEnd = cursor;
+  if (!skipSpace()) return null;
+  if (text[cursor] === ')') return cursor + 1;
+  if (cursor === destinationEnd) return null;
+  const quote = text[cursor];
+  const closing = quote === '(' ? ')' : quote;
+  if (!['"', "'", '('].includes(quote)) return null;
+  cursor++;
+  while (cursor < text.length && text[cursor] !== closing) {
+    if (blankLineAfter(text, cursor)) return null;
+    cursor += escaped() ? 2 : 1;
+  }
+  if (text[cursor] !== closing) return null;
+  cursor++;
+  if (!skipSpace()) return null;
+  return text[cursor] === ')' ? cursor + 1 : null;
+}
+
+/** Index same-width code/math closers without pairing across native paragraph boundaries. */
+function inlineLiteralSpans(
+  text: string,
+  delimiter: '`' | '$',
+  missingClosers: Map<string, number>
+): Map<number, LiteralSpan> {
   const spans = new Map<number, LiteralSpan>();
   let segmentStart = 0;
   let lineStart = 0;
@@ -272,7 +250,14 @@ function inlineCodeSpans(text: string): Map<number, LiteralSpan> {
     const newline = text.indexOf('\n', lineStart);
     const lineEnd = newline < 0 ? text.length : newline;
     const line = text.slice(lineStart, lineEnd);
-    if (isInlineCodeBoundaryLine(line)) {
+    if (ATX_HEADING_LINE.test(line)) {
+      indexSegment(segmentStart, lineStart);
+      indexSegment(lineStart, lineEnd);
+      segmentStart = newline < 0 ? text.length : newline + 1;
+    } else if (
+      isInlineCodeBoundaryLine(line) ||
+      rawHtmlOpening(text, lineStart, missingClosers)
+    ) {
       indexSegment(segmentStart, lineStart);
       segmentStart = newline < 0 ? text.length : newline + 1;
     }
@@ -283,7 +268,9 @@ function inlineCodeSpans(text: string): Map<number, LiteralSpan> {
   return spans;
 
   function indexSegment(start: number, end: number): void {
-    const runs = [...text.slice(start, end).matchAll(/`+/g)];
+    const runs = [
+      ...text.slice(start, end).matchAll(delimiter === '`' ? /`+/g : /\$+/g),
+    ];
     const next = new Map<number, number>();
     for (let index = runs.length - 1; index >= 0; index--) {
       const run = runs[index];
@@ -361,8 +348,11 @@ function codeLiteralSpan(
  */
 export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
   const markers: VariableMarker[] = [];
-  const inlineSpans = inlineCodeSpans(text);
   const missingHtmlClosers = new Map<string, number>();
+  const inlineSpans = inlineLiteralSpans(text, '`', missingHtmlClosers);
+  const mathSpans = inlineLiteralSpans(text, '$', missingHtmlClosers);
+  const labels: { image: boolean; active: boolean }[] = [];
+  const activeLinkLabels = new Set<{ image: boolean; active: boolean }>();
   const collectLiteral = (start: number, end: number) => {
     const literal = text.slice(start, end);
     let cursor = 0;
@@ -390,6 +380,14 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
   let cursor = 0;
   while (cursor < text.length) {
     if (cursor === 0 || text[cursor - 1] === '\n') {
+      const previousStart = text.lastIndexOf('\n', cursor - 2) + 1;
+      if (
+        cursor === 0 ||
+        /^[\t \r]*$/.test(text.slice(previousStart, cursor - 1))
+      ) {
+        labels.length = 0;
+        activeLinkLabels.clear();
+      }
       const indentedEnd = indentedCodeEnd(text, cursor);
       if (indentedEnd !== null) {
         collectLiteral(cursor, indentedEnd);
@@ -422,6 +420,53 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
     }
     if (text[cursor] === '\\') {
       cursor += 2;
+      continue;
+    }
+    const interaction = readInteraction(text, cursor);
+    if (interaction) {
+      collectLiteral(
+        cursor + 2,
+        interaction.end - (interaction.complete ? 1 : 0)
+      );
+      cursor = interaction.end;
+      continue;
+    }
+    if (text[cursor] === '[') {
+      let slashes = 0;
+      for (let at = cursor - 2; at >= 0 && text[at] === '\\'; at--) slashes++;
+      const label = {
+        image: text[cursor - 1] === '!' && slashes % 2 === 0,
+        active: true,
+      };
+      labels.push(label);
+      if (!label.image) activeLinkLabels.add(label);
+    }
+    if (text[cursor] === ']' && labels.length) {
+      const label = labels.pop();
+      if (label) activeLinkLabels.delete(label);
+      if (label?.active && text[cursor + 1] === '(') {
+        const end = linkResourceEnd(text, cursor + 1);
+        if (end !== null) {
+          if (!label.image) {
+            // Each non-image ancestor is invalidated at most once; image-only
+            // ancestors never need to be rescanned for every following link.
+            for (const outer of activeLinkLabels) outer.active = false;
+            activeLinkLabels.clear();
+          }
+          collectLiteral(cursor + 2, end - 1);
+          cursor = end;
+          continue;
+        }
+      }
+    }
+    if (text[cursor] === '$') {
+      const span = mathSpans.get(cursor);
+      if (span) {
+        collectLiteral(span.bodyStart, span.bodyEnd);
+        cursor = span.end;
+        continue;
+      }
+      while (text[cursor] === '$') cursor++;
       continue;
     }
     if (text[cursor] === '`' || text[cursor] === '~') {

@@ -1172,3 +1172,108 @@ test('multiline markers keep native paragraph continuation and Setext headings',
     );
   }
 });
+
+test('document extraction and the real Markdown pipeline agree at literal boundaries', () => {
+  const question = '?[%{{ real }} A|B]';
+  const cases = [
+    {
+      source: `    {{ unfinished\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `\t{{ unfinished\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    { source: `$x {{ y$\n\n${question}`, names: ['real'], variables: ['real'] },
+    {
+      source: `[x](url "{{")\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `![x](url "{{")\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `# Heading \u0060{{\nq\u0060 then ${question}`,
+      names: ['q` then ?[%{{ real'],
+      variables: [],
+    },
+    {
+      source: '# Heading ${{\nq$ then ' + question,
+      names: ['q$ then ?[%{{ real'],
+      variables: [],
+    },
+    {
+      source: `# Heading \u0060{{\u0060\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `# Heading $x {{ y$\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `\u0060\u0060\u0060{{language}}\nx\n\u0060\u0060\u0060\n${question}`,
+      names: ['language', 'real'],
+      variables: ['real'],
+    },
+    {
+      source: '?[%{{ q }} A ${{ y$ | B]\n\n?[%{{ real }} C|D]',
+      names: ['q'],
+      variables: ['q'],
+    },
+  ];
+  for (const tag of ['script', 'style', 'pre', 'textarea']) {
+    cases.push({
+      source: `<${tag}>\n{{ unfinished\n</${tag}>\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    });
+    cases.push({
+      source: `<${tag}>\ncode\n</${tag}> {{ unfinished\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    });
+  }
+  for (const width of [2, 3, 4]) {
+    cases.push({
+      source: `Show \\${'$'.repeat(width)}{{${'$'.repeat(width - 1)} then ${question}`,
+      names: ['real'],
+      variables: ['real'],
+    });
+  }
+  for (const opening of ['[', '![']) {
+    cases.push({
+      source: `${opening.repeat(1024)}${'[x](u)'.repeat(1024)} ${question}`,
+      names: ['real'],
+      variables: ['real'],
+    });
+  }
+  for (const sample of cases) {
+    assert.deepEqual(
+      extractVariableNames(sample.source),
+      sample.names,
+      sample.source
+    );
+    for (const plugin of [
+      remarkFlow,
+      remarkInteraction,
+      remarkCustomVariable,
+    ]) {
+      for (const source of [sample.source, Buffer.from(sample.source)]) {
+        assert.deepEqual(
+          interactions(render({ value: source }, plugin)).map(
+            item => item.variableName
+          ),
+          sample.variables,
+          sample.source
+        );
+      }
+    }
+  }
+});
