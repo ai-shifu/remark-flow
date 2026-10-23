@@ -127,11 +127,161 @@ export const formatVariableAssignment = (raw: string): string | null => {
   return reference === null ? null : `%${reference}`;
 };
 
-/** Collect unique names in source order, including assignment and ordinary reference markers. */
+interface LiteralSpan {
+  bodyStart: number;
+  bodyEnd: number;
+  end: number;
+}
+
+const HTML_SPACE = /[\t\n\f\r ]/;
+
+/** Read a complete HTML token, using CommonMark's tag and attribute name shapes. */
+function htmlLiteralEnd(text: string, start: number): number | null {
+  for (const [opening, closing] of [
+    ['<!--', '-->'],
+    ['<![CDATA[', ']]>'],
+    ['<?', '?>'],
+  ]) {
+    if (text.startsWith(opening, start)) {
+      const end = text.indexOf(closing, start + opening.length);
+      return end < 0 ? null : end + closing.length;
+    }
+  }
+  if (/^<![A-Za-z]/.test(text.slice(start, start + 3))) {
+    const end = text.indexOf('>', start + 3);
+    return end < 0 ? null : end + 1;
+  }
+  let cursor = start + 1;
+  const closingTag = text[cursor] === '/';
+  if (closingTag) cursor++;
+  const tagName = /[A-Za-z][A-Za-z0-9-]*/y;
+  tagName.lastIndex = cursor;
+  if (!tagName.exec(text)) return null;
+  cursor = tagName.lastIndex;
+  for (;;) {
+    const beforePadding = cursor;
+    while (cursor < text.length && HTML_SPACE.test(text[cursor])) cursor++;
+    if (text[cursor] === '>') return cursor + 1;
+    if (!closingTag && text.startsWith('/>', cursor)) return cursor + 2;
+    if (closingTag || cursor === beforePadding) return null;
+    const attribute = /[A-Za-z_:][A-Za-z0-9_.:-]*/y;
+    attribute.lastIndex = cursor;
+    if (!attribute.exec(text)) return null;
+    cursor = attribute.lastIndex;
+    const afterName = cursor;
+    while (cursor < text.length && HTML_SPACE.test(text[cursor])) cursor++;
+    if (text[cursor] !== '=') {
+      cursor = afterName;
+      continue;
+    }
+    cursor++;
+    while (cursor < text.length && HTML_SPACE.test(text[cursor])) cursor++;
+    const quote = text[cursor];
+    if (quote === '"' || quote === "'") {
+      const end = text.indexOf(quote, cursor + 1);
+      if (end < 0) return null;
+      cursor = end + 1;
+    } else {
+      const valueStart = cursor;
+      while (cursor < text.length && !/[\t\n\f\r "'=<>`]/.test(text[cursor]))
+        cursor++;
+      if (cursor === valueStart) return null;
+    }
+  }
+}
+
+/** Complete code spans are bounded even if their example marker never closes. */
+function codeLiteralSpan(text: string, start: number): LiteralSpan | null {
+  const character = text[start];
+  let openingEnd = start;
+  while (text[openingEnd] === character) openingEnd++;
+  const size = openingEnd - start;
+  let prefix = start;
+  while (prefix > 0 && start - prefix < 3 && text[prefix - 1] === ' ') prefix--;
+  const atLineStart = prefix === 0 || text[prefix - 1] === '\n';
+  if (size >= 3 && atLineStart) {
+    const openingLineEnd = text.indexOf('\n', openingEnd);
+    if (
+      character === '~' ||
+      !text
+        .slice(openingEnd, openingLineEnd < 0 ? text.length : openingLineEnd)
+        .includes('`')
+    ) {
+      const bodyStart = openingLineEnd < 0 ? text.length : openingLineEnd + 1;
+      const closing = new RegExp(`^ {0,3}${character}{${size},}[\t ]*$`);
+      let cursor = bodyStart;
+      while (cursor < text.length) {
+        const newline = text.indexOf('\n', cursor);
+        const end = newline < 0 ? text.length : newline;
+        const line = text.slice(cursor, end).replace(/\r$/, '');
+        if (closing.test(line)) {
+          return { bodyStart, bodyEnd: cursor, end };
+        }
+        cursor = end + 1;
+      }
+      return { bodyStart, bodyEnd: text.length, end: text.length };
+    }
+  }
+  if (character !== '`') return null;
+  let cursor = openingEnd;
+  for (;;) {
+    const close = text.indexOf('`', cursor);
+    if (close < 0) return null;
+    cursor = close;
+    while (text[cursor] === '`') cursor++;
+    if (cursor - close === size) {
+      return { bodyStart: openingEnd, bodyEnd: close, end: cursor };
+    }
+  }
+}
+
+/**
+ * Collect unique document names in source order, including complete markers in literal examples.
+ * An incomplete example marker cannot cross the closing code/HTML boundary and hide later names.
+ * Raw readers remain available when the caller needs a single opaque marker without Markdown.
+ */
 export const extractVariableNames = (text: string): string[] => {
   const names = new Set<string>();
-  for (const marker of findVariableMarkers(text)) {
-    if (marker.name !== null) names.add(marker.name);
+  const collectLiteral = (start: number, end: number) => {
+    for (const marker of findVariableMarkers(text.slice(start, end))) {
+      if (marker.name !== null) names.add(marker.name);
+    }
+  };
+  let cursor = 0;
+  while (cursor < text.length) {
+    // A marker reached first owns its whole body, including any code/HTML-looking text.
+    if (text.startsWith('{{', cursor)) {
+      const marker = readVariableMarker(text, cursor);
+      if (!marker) break;
+      if (marker.name !== null) names.add(marker.name);
+      cursor = marker.end;
+      continue;
+    }
+    if (text[cursor] === '\\') {
+      cursor += 2;
+      continue;
+    }
+    if (text[cursor] === '`' || text[cursor] === '~') {
+      const span = codeLiteralSpan(text, cursor);
+      if (span) {
+        collectLiteral(span.bodyStart, span.bodyEnd);
+        cursor = span.end;
+        continue;
+      }
+      // Only the full opening run can start a span; its suffix is not another opening.
+      const character = text[cursor];
+      while (text[cursor] === character) cursor++;
+      continue;
+    }
+    if (text[cursor] === '<') {
+      const end = htmlLiteralEnd(text, cursor);
+      if (end !== null) {
+        collectLiteral(cursor, end);
+        cursor = end;
+        continue;
+      }
+    }
+    cursor++;
   }
   return [...names];
 };

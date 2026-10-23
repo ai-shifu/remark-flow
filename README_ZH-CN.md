@@ -188,7 +188,9 @@ U+2028、U+2029，也不能包含标记结束符 `}}`。
 `VARIABLE_ASSIGNMENT_SOURCE`，避免各自维护不同的变量正则。
 
 `extractVariableNames(text)` 按源码出现顺序去重提取 `{{变量名}}`（包括 `%{{变量名}}`）；
-它保留现有全文扫描范围，不排除代码块或注释。`createVariableExpressionRegex('gu')`
+它保留现有全文扫描范围，不排除代码块或注释，仍提取代码和 HTML 示例内完整的标记；不完整的
+示例标记不会越过代码或 HTML 的闭合边界，遮住后续变量。Markdown 转义的左花括号不会开启
+文档标记；下方 raw reader API 不解释这些 Markdown 上下文。`createVariableExpressionRegex('gu')`
 返回独立正则，第一捕获组仍是合法且去掉两端空白后的变量名，适合验证完整标记。
 
 扫描全文时用 `findVariableMarkers(text)`，按第一个 `}}` 一次读取整段标记，不把键内部的 `{{`

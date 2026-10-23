@@ -17,6 +17,11 @@ import {
 interface ContractCases {
   normalization: Array<{ raw: string; name: string | null }>;
   extraction: Array<{ source: string; names: string[] }>;
+  document_context_cases: Array<{
+    id: string;
+    source: string;
+    names: string[];
+  }>;
   interactions: Array<{
     source: string;
     name: string;
@@ -53,6 +58,13 @@ describe('the shared MarkdownFlow variable-name contract', () => {
   test.each(cases.extraction)('extracts $source', ({ source, names }) => {
     expect(extractVariableNames(source)).toEqual(names);
   });
+
+  test.each(cases.document_context_cases)(
+    'preserves document literal boundaries in $id',
+    ({ source, names }) => {
+      expect(extractVariableNames(source)).toEqual(names);
+    }
+  );
 
   test.each(cases.interactions)(
     'parses $source',

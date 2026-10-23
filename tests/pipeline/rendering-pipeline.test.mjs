@@ -403,6 +403,23 @@ test('the shared contract interactions survive every actual Markdown plugin path
   }
 });
 
+test('document literal examples preserve names and later interactions in every plugin', () => {
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const sample of contractCases.document_context_cases) {
+      assert.deepEqual(
+        extractVariableNames(sample.source),
+        sample.names,
+        sample.id
+      );
+      const found = interactions(render(sample.source, plugin));
+      assert.equal(found.length, sample.interaction_count, sample.id);
+      assert.deepEqual(found[0].buttonTexts, sample.buttons, sample.id);
+      assert.deepEqual(found[0].buttonValues, sample.values, sample.id);
+      assert.equal(found[0].variableName, sample.name ?? undefined, sample.id);
+    }
+  }
+});
+
 test('token chunks preserve invalid NUL and a valid literal replacement character', () => {
   const tree = render(
     '前缀🙂 ?[%{{bad\u0000key}} A | B] 中间 ?[%{{bad\ufffdkey}} A | B]'

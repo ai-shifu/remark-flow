@@ -113,6 +113,40 @@ describe('the shared variable-name grammar', () => {
     ]);
   });
 
+  test('keeps incomplete literal examples inside their own code and HTML boundaries', () => {
+    for (const literal of [
+      '`{{`',
+      '``{{ incomplete ` example``',
+      '<span title="a > {{">',
+      "<span title='{{'>",
+      '<!-- {{ -->',
+      '<![CDATA[ {{ ]]>',
+      '<?example {{ ?>',
+      '<!DOCTYPE {{ >',
+    ]) {
+      expect(extractVariableNames(`${literal} ?[%{{ q }} A|B]`)).toEqual(['q']);
+    }
+    for (const [opening, closing] of [
+      ['```', '```'],
+      ['```', '````'],
+      ['~~~', '~~~~'],
+      ['  ~~~', '  ~~~~'],
+    ]) {
+      const source = `${opening}md\n%{{ inner }}\n{{ unclosed\n${closing}\n?[%{{ q }} A|B]`;
+      expect(extractVariableNames(source)).toEqual(['inner', 'q']);
+    }
+    expect(extractVariableNames(String.raw`\{{ skipped }} {{ q }}`)).toEqual([
+      'q',
+    ]);
+    expect(extractVariableNames(String.raw`\\{{ kept }}`)).toEqual(['kept']);
+    expect(
+      extractVariableNames('`%{{ code }}` <span title="%{{ attr }}">')
+    ).toEqual(['code', 'attr']);
+    expect(
+      extractVariableNames('`{{` '.repeat(3000) + '?[%{{ q }} A|B]')
+    ).toEqual(['q']);
+  });
+
   test('does not share matcher state or normalize punctuation and case', () => {
     const first = createVariableExpressionRegex();
     first.exec('{{one}} {{two}}');
