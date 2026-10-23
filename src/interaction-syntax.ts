@@ -610,7 +610,9 @@ function tokenizeOpaqueBlock(
   ): State {
     // Keep micromark's own HTML grammar, including quoted attributes and comments.
     if (!html) return no;
-    return html.tokenize.call(
+    let closed = false;
+    let done = false;
+    const state = html.tokenize.call(
       this,
       {
         ...check,
@@ -618,10 +620,40 @@ function tokenizeOpaqueBlock(
           checkedSize++;
           check.consume(code);
         },
+        exit(type) {
+          const token = check.exit(type);
+          if (type === 'htmlText') closed = true;
+          return token;
+        },
       },
-      yes,
-      no
+      code => {
+        done = true;
+        return yes(code);
+      },
+      code => {
+        done = true;
+        return no(code);
+      }
     );
+    return withinParagraph(state);
+
+    function withinParagraph(state: State): State {
+      return code => {
+        // htmlText normally sees only one paragraph. Flow lookahead must impose
+        // the same boundary before passing it a blank line or a new flow block.
+        // A closed HTML token still receives this code so its `ok` state can run.
+        if (!closed && isLineEnding(code)) {
+          if (probe) return no(code);
+          return check.check(continuationConstruct, advance, no)(code);
+        }
+        return advance(code);
+
+        function advance(code: Code): State | undefined {
+          const next = state(code);
+          return next && !done ? withinParagraph(next) : next;
+        }
+      };
+    }
   }
 
   function skipChecked(code: Code): State | undefined {

@@ -867,6 +867,30 @@ test('code spans and escaped braces do not claim a following real code fence', (
   }
 });
 
+test('HTML-looking link titles do not extend lookahead into a later Markdown block', () => {
+  const sources = [
+    '[`code`](url "<!-- <figure></figure>")\n\n<!-- actual -->',
+    '[docs][ref]\n\n[ref]: https://example.com "<!-- <figure></figure>"\n\n<figure>Actual</figure>',
+    '[docs](url "<!-- example")\n\n\u0060\u0060\u0060html\n<!-- actual -->\n\u0060\u0060\u0060',
+    'Text <!-- real\ncontinued -->\n\n<figure>Actual</figure>',
+  ];
+  for (const source of sources) {
+    const native = unified()
+      .use(remarkParse)
+      .use(remarkGfm)
+      .use(remarkMath)
+      .use(remarkBreaks);
+    const expected = native.runSync(native.parse(source), source).children;
+    for (const plugin of [
+      remarkFlow,
+      remarkInteraction,
+      remarkCustomVariable,
+    ]) {
+      assert.deepEqual(render(source, plugin).children, expected, source);
+    }
+  }
+});
+
 test('multiline markers keep native paragraph continuation and Setext headings', () => {
   const containers = [
     value => value,
