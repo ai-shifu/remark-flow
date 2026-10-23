@@ -839,3 +839,54 @@ describe('document container, ordinary HTML and line-ending boundaries', () => {
     ).toEqual([]);
   });
 });
+
+test.each(['ticks', 'lines'])(
+  'bounds retained indexing state for large %s documents containing a marker',
+  kind => {
+    const source = (kind === 'ticks' ? '`a' : '\n').repeat(50_000) + '{{ x }}';
+    const originalSet = Map.prototype.set;
+    let peakEntries = 0;
+    const spy = jest.spyOn(Map.prototype, 'set').mockImplementation(function (
+      this: Map<unknown, unknown>,
+      key: unknown,
+      value: unknown
+    ) {
+      const result = originalSet.call(this, key, value);
+      peakEntries = Math.max(peakEntries, this.size);
+      return result;
+    });
+    let names;
+    try {
+      names = extractVariableNames(source);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(names).toEqual(['x']);
+    // Retained object maps scale with distinct delimiter widths, never the number
+    // of ordinary lines or runs. Numeric positions use compact typed storage.
+    expect(peakEntries).toBeLessThanOrEqual(4);
+  }
+);
+
+test.each(['`', '$'])(
+  'does not pair %s through confirmed native block interruptions',
+  delimiter => {
+    for (const boundary of ['> ', '- ', '1. ', '---\n', '<div>\n']) {
+      const source = `Text ${delimiter}{{ unfinished\n${boundary}${delimiter} end\n\n?[%{{ real }} A|B]`;
+      expect(extractVariableNames(source)).toEqual([]);
+    }
+    for (const prefix of ['> ', '- ', '1. ']) {
+      const source = `${prefix}${delimiter}{{${delimiter} end ?[%{{ real }} A|B]`;
+      expect(extractVariableNames(source)).toEqual(['real']);
+    }
+    for (const [first, continuation] of [
+      ['> ', '> '],
+      ['- ', '  '],
+      ['1. ', '   '],
+      ['> ', ''],
+    ]) {
+      const source = `${first}${delimiter}{{\n${continuation}word${delimiter} end ?[%{{ real }} A|B]`;
+      expect(extractVariableNames(source)).toEqual(['real']);
+    }
+  }
+);

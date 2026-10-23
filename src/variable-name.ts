@@ -15,29 +15,54 @@ interface DocumentLine {
   end: number;
 }
 
-/** Keep original UTF-16 offsets while recognizing every Markdown line ending. */
-function documentLines(text: string): DocumentLine[] {
-  const lines: DocumentLine[] = [];
-  let start = 0;
-  for (const ending of text.matchAll(/\r\n|[\r\n]/g)) {
-    const contentEnd = ending.index ?? 0;
-    const end = contentEnd + ending[0].length;
-    lines.push({ start, contentEnd, end });
-    start = end;
+/** Store only line starts; line objects are temporary views, never retained per input line. */
+class DocumentLines {
+  private readonly starts: Uint32Array;
+
+  constructor(private readonly text: string) {
+    let count = 1;
+    for (let at = 0; at < text.length; at++) {
+      if (text[at] === '\r') {
+        count++;
+        if (text[at + 1] === '\n') at++;
+      } else if (text[at] === '\n') count++;
+    }
+    this.starts = new Uint32Array(count);
+    let index = 1;
+    for (let at = 0; at < text.length; at++) {
+      if (text[at] === '\r') {
+        if (text[at + 1] === '\n') at++;
+        this.starts[index++] = at + 1;
+      } else if (text[at] === '\n') this.starts[index++] = at + 1;
+    }
   }
-  lines.push({ start, contentEnd: text.length, end: text.length });
-  return lines;
+
+  get length(): number {
+    return this.starts.length;
+  }
+  start(index: number): number {
+    return this.starts[index];
+  }
+
+  at(index: number): DocumentLine {
+    const start = this.starts[index];
+    const end = this.starts[index + 1] ?? this.text.length;
+    let contentEnd = end;
+    if (index + 1 < this.starts.length) {
+      contentEnd--;
+      if (this.text[contentEnd] === '\n' && this.text[contentEnd - 1] === '\r')
+        contentEnd--;
+    }
+    return { start, contentEnd, end };
+  }
 }
 
-function containingLine(
-  lines: readonly DocumentLine[],
-  offset: number
-): number {
+function containingLine(lines: DocumentLines, offset: number): number {
   let low = 0;
   let high = lines.length;
   while (low < high) {
     const middle = (low + high) >>> 1;
-    if (lines[middle].start <= offset) low = middle + 1;
+    if (lines.start(middle) <= offset) low = middle + 1;
     else high = middle;
   }
   return Math.max(0, low - 1);
@@ -50,12 +75,17 @@ const MAX_LINK_DESTINATION_DEPTH = 32;
 const ATX_HEADING_LINE = /^ {0,3}#{1,6}(?:[ \t]|$)/;
 const THEMATIC_BREAK_LINE =
   /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/;
+const CONTAINER_INTERRUPT_LINE = /^ {0,3}(?:>|(?:[-+*]|1[.)])[ \t]+[^ \t])/;
 const INLINE_CODE_BREAK_LINE =
   /^[ \t]*\r?$|^ {0,3}(?:`{3,}[^`\r\n]*|~{3,}[^\r\n]*)\r?$/;
 
 /** @internal Shared document/flow boundary for an unfinished inline code span. */
 export const isInlineCodeBoundaryLine = (line: string): boolean =>
-  INLINE_CODE_BREAK_LINE.test(line) || ATX_HEADING_LINE.test(line);
+  INLINE_CODE_BREAK_LINE.test(line) ||
+  ATX_HEADING_LINE.test(line) ||
+  THEMATIC_BREAK_LINE.test(line) ||
+  CONTAINER_INTERRUPT_LINE.test(line) ||
+  ordinaryHtmlInterrupt(line);
 
 /** Reuse failed suffix searches across malformed literal candidates in one document. */
 function findClosing(
@@ -138,14 +168,14 @@ function htmlLiteralEnd(
 /** Bound indented code to its last nonblank indented line, leaving trailing blanks outside. */
 function indentedCodeEnd(
   text: string,
-  lines: readonly DocumentLine[],
+  lines: DocumentLines,
   index: number,
   followsBlock: boolean
 ): number | null {
   if (index > 0 && !followsBlock) return null;
   let lastContentEnd: number | null = null;
   for (; index < lines.length; index++) {
-    const { start, contentEnd } = lines[index];
+    const { start, contentEnd } = lines.at(index);
     const line = text.slice(start, contentEnd);
     if (/^[\t ]*$/.test(line)) {
       if (lastContentEnd === null) return null;
@@ -186,7 +216,7 @@ function rawHtmlSpan(
   text: string,
   start: number,
   missingClosers: Map<string, number>,
-  lines: readonly DocumentLine[]
+  lines: DocumentLines
 ): LiteralSpan | null {
   const opening = rawHtmlOpening(text, start, missingClosers);
   if (!opening) return null;
@@ -194,7 +224,7 @@ function rawHtmlSpan(
   closing.lastIndex = opening.end;
   const matched = closing.exec(text);
   const closingEnd = matched ? matched.index + matched[0].length : text.length;
-  const end = lines[containingLine(lines, closingEnd)].contentEnd;
+  const end = lines.at(containingLine(lines, closingEnd)).contentEnd;
   return { bodyStart: opening.end, bodyEnd: end, end };
 }
 
@@ -295,10 +325,10 @@ function linkResourceEnd(text: string, start: number): number | null {
 /** Bound valid reference resources, reusing the inline destination and title readers. */
 function referenceDefinitionEnd(
   text: string,
-  lines: readonly DocumentLine[],
+  lines: DocumentLines,
   index: number
 ): number | null {
-  const line = lines[index];
+  const line = lines.at(index);
   const label = /^ {0,3}\[((?:\\[^\r\n]|[^[\]\\\r\n]){1,999})\]:/.exec(
     text.slice(line.start, line.contentEnd)
   );
@@ -327,60 +357,129 @@ function referenceDefinitionEnd(
   return lineEnded ? destinationLineEnd : null;
 }
 
-/** Index same-width code/math closers without pairing across native paragraph boundaries. */
+/** Retain compact numeric closer indexes only after a delimiter is actually encountered. */
 function inlineLiteralSpans(
   text: string,
   delimiter: '`' | '$',
   missingClosers: Map<string, number>,
-  lines: readonly DocumentLine[]
-): Map<number, LiteralSpan> {
-  const spans = new Map<number, LiteralSpan>();
+  lines: DocumentLines
+): { get(start: number): LiteralSpan | undefined } {
+  let count = 0;
+  for (let at = text.indexOf(delimiter); at >= 0; ) {
+    count++;
+    do {
+      at++;
+    } while (text[at] === delimiter);
+    at = text.indexOf(delimiter, at);
+  }
+  const starts = new Uint32Array(count);
+  const sizes = new Uint32Array(count);
+  const closes = new Uint32Array(count);
+  const absent = 0xffffffff;
+  closes.fill(absent);
+  let suffixes: Uint32Array | undefined;
+  let run = 0;
+  for (let at = text.indexOf(delimiter); at >= 0; ) {
+    const opening = at;
+    do {
+      at++;
+    } while (text[at] === delimiter);
+    starts[run] = opening;
+    sizes[run++] = at - opening;
+    at = text.indexOf(delimiter, at);
+  }
   let segmentStart = 0;
-  for (const { start: lineStart, contentEnd: lineEnd, end } of lines) {
-    const line = text.slice(lineStart, lineEnd);
+  let container: ContainerStep[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    const { start, contentEnd, end } = lines.at(index);
+    const line = text.slice(start, contentEnd);
+    const contentStart = containerContentStart(line, container);
+    const remainder = line.slice(contentStart ?? 0);
+    const nested = containerOpening(remainder);
     if (ATX_HEADING_LINE.test(line)) {
-      indexSegment(segmentStart, lineStart);
-      indexSegment(lineStart, lineEnd);
+      indexSegment(segmentStart, start);
+      indexSegment(start, contentEnd);
       segmentStart = end;
+      container = [];
+    } else if (
+      CONTAINER_INTERRUPT_LINE.test(remainder) &&
+      nested.steps.length &&
+      !THEMATIC_BREAK_LINE.test(remainder)
+    ) {
+      // Entering a quote/item starts a new paragraph; its own complete and
+      // continued literals keep their normal same-container matching.
+      indexSegment(segmentStart, start);
+      segmentStart = start;
+      container =
+        contentStart === null ? nested.steps : [...container, ...nested.steps];
     } else if (
       isInlineCodeBoundaryLine(line) ||
-      rawHtmlOpening(text, lineStart, missingClosers)
+      rawHtmlOpening(text, start, missingClosers)
     ) {
-      indexSegment(segmentStart, lineStart);
+      if (
+        CONTAINER_INTERRUPT_LINE.test(line) &&
+        contentStart !== null &&
+        container.length
+      )
+        continue;
+      indexSegment(segmentStart, start);
       segmentStart = end;
+      container = [];
     }
   }
   indexSegment(segmentStart, text.length);
-  return spans;
+  let searchHint = 0;
+  return {
+    get(opening) {
+      while (searchHint < count && starts[searchHint] < opening) searchHint++;
+      let index = searchHint;
+      let closing = absent;
+      let bodyStart = opening;
+      let size = 0;
+      if (starts[index] === opening) {
+        size = sizes[index];
+        closing = closes[index];
+        bodyStart += size;
+      } else if (index > 0 && starts[index - 1] + 1 === opening && suffixes) {
+        index--;
+        size = sizes[index] - 1;
+        closing = suffixes[index];
+        bodyStart += size;
+      }
+      return closing === absent
+        ? undefined
+        : { bodyStart, bodyEnd: closing, end: closing + size };
+    },
+  };
+
+  function lowerBound(position: number): number {
+    let low = 0;
+    let high = count;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (starts[middle] < position) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
 
   function indexSegment(start: number, end: number): void {
-    const runs = [
-      ...text.slice(start, end).matchAll(delimiter === '`' ? /`+/g : /\$+/g),
-    ];
+    const first = lowerBound(start);
+    const last = lowerBound(end);
+    if (first === last) return;
     const next = new Map<number, number>();
-    for (let index = runs.length - 1; index >= 0; index--) {
-      const run = runs[index];
-      const opening = start + (run.index ?? 0);
-      const size = run[0].length;
-      const closing = next.get(size);
-      if (closing !== undefined) {
-        spans.set(opening, {
-          bodyStart: opening + size,
-          bodyEnd: closing,
-          end: closing + size,
-        });
-      }
-      // Outside code, a backslash may escape the first tick of a run. Its suffix
-      // can open a shorter span, while an existing code span still sees the full run.
+    for (let index = last - 1; index >= first; index--) {
+      const opening = starts[index];
+      const size = sizes[index];
+      closes[index] = next.get(size) ?? absent;
       let slashes = 0;
       for (let at = opening - 1; at >= 0 && text[at] === '\\'; at--) slashes++;
-      const suffixClosing = next.get(size - 1);
-      if (slashes % 2 && size > 1 && suffixClosing !== undefined) {
-        spans.set(opening + 1, {
-          bodyStart: opening + size,
-          bodyEnd: suffixClosing,
-          end: suffixClosing + size - 1,
-        });
+      if (slashes % 2 && size > 1) {
+        if (!suffixes) {
+          suffixes = new Uint32Array(count);
+          suffixes.fill(absent);
+        }
+        suffixes[index] = next.get(size - 1) ?? absent;
       }
       next.set(size, opening);
     }
@@ -389,12 +488,11 @@ function inlineLiteralSpans(
 
 type ContainerStep = { quote: true } | { indent: number };
 
-/** Read the native quote/list prefix of a fenced block without rewriting its source. */
-function fenceOpening(line: string): {
-  marker: string;
-  size: number;
+/** Read quote/list steps without rewriting the original text or source offsets. */
+function containerOpening(line: string): {
+  contentStart: number;
   steps: ContainerStep[];
-} | null {
+} {
   let cursor = 0;
   const steps: ContainerStep[] = [];
   for (;;) {
@@ -418,10 +516,17 @@ function fenceOpening(line: string): {
       steps.push({ indent: columns });
       continue;
     }
-    const fence = /^(`{3,})([^`]*$)|^(~{3,})(.*$)/.exec(line.slice(cursor));
-    const run = fence?.[1] ?? fence?.[3];
-    return run ? { marker: run[0], size: run.length, steps } : null;
+    return { contentStart: cursor, steps };
   }
+}
+
+function fenceOpening(
+  line: string
+): { marker: string; size: number; steps: ContainerStep[] } | null {
+  const { contentStart, steps } = containerOpening(line);
+  const fence = /^(`{3,})([^`]*$)|^(~{3,})(.*$)/.exec(line.slice(contentStart));
+  const run = fence?.[1] ?? fence?.[3];
+  return run ? { marker: run[0], size: run.length, steps } : null;
 }
 
 function containerContentStart(
@@ -450,10 +555,10 @@ function containerContentStart(
 
 function fencedCodeSpan(
   text: string,
-  lines: readonly DocumentLine[],
+  lines: DocumentLines,
   index: number
 ): LiteralSpan | null {
-  const openingLine = lines[index];
+  const openingLine = lines.at(index);
   const opening = fenceOpening(
     text.slice(openingLine.start, openingLine.contentEnd)
   );
@@ -462,7 +567,7 @@ function fencedCodeSpan(
     `^ {0,3}${opening.marker}{${opening.size},}[\\t ]*$`
   );
   for (let at = index + 1; at < lines.length; at++) {
-    const line = lines[at];
+    const line = lines.at(at);
     const value = text.slice(line.start, line.contentEnd);
     const contentStart = containerContentStart(value, opening.steps);
     if (contentStart === null) {
@@ -489,21 +594,26 @@ const HTML_BLOCK_TAGS = new Set(
   )
 );
 
+function ordinaryHtmlInterrupt(line: string): boolean {
+  const tag = /^ {0,3}<\/?([A-Za-z][A-Za-z0-9-]*)(?=[ \t/>]|$)/.exec(line);
+  return tag !== null && HTML_BLOCK_TAGS.has(tag[1].toLowerCase());
+}
+
 /** Native ordinary HTML blocks stop at a blank line, after any complete opening token. */
 function ordinaryHtmlSpan(
   text: string,
-  lines: readonly DocumentLine[],
+  lines: DocumentLines,
   index: number,
   missingClosers: Map<string, number>
 ): LiteralSpan | null {
-  const line = lines[index];
+  const line = lines.at(index);
   const source = text.slice(line.start, line.contentEnd);
   const tag = /^ {0,3}<\/?([A-Za-z][A-Za-z0-9-]*)(?=[ \t/>]|$)/.exec(source);
   if (!tag) return null;
   const tokenStart = line.start + source.indexOf('<');
   const tokenEnd = htmlLiteralEnd(text, tokenStart, missingClosers);
   if (!HTML_BLOCK_TAGS.has(tag[1].toLowerCase())) {
-    const previous = lines[index - 1];
+    const previous = index > 0 ? lines.at(index - 1) : undefined;
     if (
       (previous &&
         !/^[\t ]*$/.test(text.slice(previous.start, previous.contentEnd))) ||
@@ -519,7 +629,7 @@ function ordinaryHtmlSpan(
     at < lines.length;
     at++
   ) {
-    const next = lines[at];
+    const next = lines.at(at);
     if (
       next.start >= bodyStart &&
       /^[\t ]*$/.test(text.slice(next.start, next.contentEnd))
@@ -540,10 +650,9 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
   if (!text.includes('{{')) return [];
   const markers: VariableMarker[] = [];
   const missingHtmlClosers = new Map<string, number>();
-  const lines = documentLines(text);
-  const lineStarts = new Map(lines.map((line, index) => [line.start, index]));
-  const inlineSpans = inlineLiteralSpans(text, '`', missingHtmlClosers, lines);
-  const mathSpans = inlineLiteralSpans(text, '$', missingHtmlClosers, lines);
+  const lines = new DocumentLines(text);
+  let inlineSpans: ReturnType<typeof inlineLiteralSpans> | undefined;
+  let mathSpans: ReturnType<typeof inlineLiteralSpans> | undefined;
   const labels: { image: boolean; active: boolean }[] = [];
   const activeLinkLabels = new Set<{ image: boolean; active: boolean }>();
   const collectLiteral = (start: number, end: number) => {
@@ -572,10 +681,18 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
   };
   let cursor = 0;
   let blockEndedAt = -1;
+  let nextLine = 0;
   while (cursor < text.length) {
-    const lineIndex = lineStarts.get(cursor);
-    if (lineIndex !== undefined) {
-      const previous = lines[lineIndex - 1];
+    while (nextLine < lines.length && lines.start(nextLine) < cursor)
+      nextLine++;
+    if (nextLine < lines.length && lines.start(nextLine) === cursor) {
+      const lineIndex = nextLine;
+      const current = lines.at(lineIndex);
+      if (current.start === current.contentEnd) {
+        cursor = current.end;
+        continue;
+      }
+      const previous = lineIndex > 0 ? lines.at(lineIndex - 1) : undefined;
       const previousText = previous
         ? text.slice(previous.start, previous.contentEnd)
         : '';
@@ -691,7 +808,12 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
       }
     }
     if (text[cursor] === '$') {
-      const span = mathSpans.get(cursor);
+      const span = (mathSpans ??= inlineLiteralSpans(
+        text,
+        '$',
+        missingHtmlClosers,
+        lines
+      )).get(cursor);
       if (span) {
         collectLiteral(span.bodyStart, span.bodyEnd);
         cursor = span.end;
@@ -701,7 +823,15 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
       continue;
     }
     if (text[cursor] === '`' || text[cursor] === '~') {
-      const span = text[cursor] === '`' ? inlineSpans.get(cursor) : undefined;
+      const span =
+        text[cursor] === '`'
+          ? (inlineSpans ??= inlineLiteralSpans(
+              text,
+              '`',
+              missingHtmlClosers,
+              lines
+            )).get(cursor)
+          : undefined;
       if (span) {
         collectLiteral(cursor, span.bodyEnd);
         cursor = span.end;
