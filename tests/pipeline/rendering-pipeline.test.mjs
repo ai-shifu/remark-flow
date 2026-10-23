@@ -683,3 +683,235 @@ test('shared marker boundaries are atomic in every actual Markdown plugin path',
     }
   }
 });
+
+test('multiline markers keep ATX headings and their surrounding Markdown structure', () => {
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const depth of [1, 2, 6]) {
+      for (const key of ['\u0060\u0060\u0060key', '~~~key', '# key', '- key']) {
+        for (const named of [false, true]) {
+          const marker = named
+            ? `?[%{{\n${key}\n}} A|B]`
+            : `{{\n${key}\n}} ?[A|B]`;
+          for (const wrap of containers) {
+            const source = wrap(
+              `${'#'.repeat(depth)} **Heading** ${marker} ###\nAfter\n\n\u0060\u0060\u0060js\ncode\n\u0060\u0060\u0060`
+            );
+            for (const value of [
+              source,
+              Buffer.from(source),
+              new TextEncoder().encode(source),
+            ]) {
+              const tree = render({ value }, plugin);
+              const found = interactions(tree);
+              assert.equal(found.length, 1, source);
+              assert.deepEqual(found[0].buttonTexts, ['A', 'B'], source);
+              assert.equal(
+                found[0].variableName,
+                named ? key : undefined,
+                source
+              );
+              const nodes = [];
+              const walk = node => {
+                nodes.push(node);
+                (node.children ?? []).forEach(walk);
+              };
+              walk(tree);
+              const headings = nodes.filter(node => node.type === 'heading');
+              assert.equal(headings.length, 1, source);
+              assert.equal(headings[0].depth, depth, source);
+              assert.equal(headings[0].children[0].type, 'strong', source);
+              assert.equal(
+                nodes.filter(node => node.type === 'code').length,
+                1,
+                source
+              );
+              assert.equal(
+                nodes.find(node => node.type === 'code').value,
+                'code',
+                source
+              );
+              assert.equal(
+                nodes.filter(node => node.type === 'paragraph').length,
+                1,
+                source
+              );
+              assert.ok(!JSON.stringify(headings[0]).includes('###'), source);
+            }
+          }
+        }
+      }
+    }
+    for (const sample of [
+      { source: '# Heading {{bad\n\u0060\u0060\u0060key\n}} ?[A|B]', count: 1 },
+      {
+        source: '# Heading ?[%{{bad\n\u0060\u0060\u0060key\n}} A|B]',
+        count: 0,
+      },
+      { source: '# Heading {{\n\u0060\u0060\u0060key\n?[A|B]', count: 0 },
+    ]) {
+      for (const wrap of containers) {
+        const source = wrap(sample.source);
+        const tree = render(source, plugin);
+        assert.equal(interactions(tree).length, sample.count, source);
+        assert.ok(JSON.stringify(tree).includes('"type":"heading"'), source);
+        assert.ok(!JSON.stringify(tree).includes('"type":"code"'), source);
+      }
+    }
+  }
+});
+
+test('code spans and escaped braces do not claim a following real code fence', () => {
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const prefix of [
+      '\u0060{{\u0060 ',
+      '\u0060\u0060{{\u0060\u0060',
+      '\u0060\u0060\u0060{{\u0060\u0060\u0060',
+      String.raw`\{{`,
+      '# Heading \u0060{{\u0060',
+      '\u0060{{\nword\u0060',
+      'Text <span title="{{">',
+      'Text <!-- {{\ntext\n-->',
+    ]) {
+      for (const fence of ['\u0060\u0060\u0060', '~~~']) {
+        for (const wrap of containers) {
+          const source = wrap(`${prefix}\n${fence}js\ncode\n${fence}\n?[A|B]`);
+          for (const value of [
+            source,
+            Buffer.from(source),
+            new TextEncoder().encode(source),
+          ]) {
+            const tree = render({ value }, plugin);
+            const found = interactions(tree);
+            assert.equal(found.length, 1, source);
+            assert.deepEqual(found[0].buttonTexts, ['A', 'B'], source);
+            const codes = [];
+            const walk = node => {
+              if (node.type === 'code') codes.push(node);
+              (node.children ?? []).forEach(walk);
+            };
+            walk(tree);
+            assert.equal(codes.length, 1, source);
+            assert.equal(codes[0].lang, 'js', source);
+            assert.equal(codes[0].value, 'code', source);
+          }
+        }
+      }
+    }
+    // Backticks inside an interaction are literal; they cannot hide its marker.
+    assert.equal(
+      only('?[%{{\n\u0060\u0060\u0060key\n}} \u0060{{body}}\u0060|B]', plugin)
+        .variableName,
+      '\u0060\u0060\u0060key'
+    );
+    const html = '<div>Heading {{\n\u0060\u0060\u0060key\n}} ?[A|B]\n</div>';
+    const htmlTree = render(html, plugin);
+    assert.equal(interactions(htmlTree).length, 0, html);
+    assert.equal(htmlTree.children[0].type, 'html', html);
+    assert.equal(htmlTree.children[0].value, html, html);
+  }
+});
+
+test('multiline markers keep native paragraph continuation and Setext headings', () => {
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const wrap of containers) {
+      for (const sample of [
+        { source: '?[%{{\nkey\n}} A\n|B]', key: 'key' },
+        {
+          source: 'Before\n?[\n%{{\n\u0060\u0060\u0060key\n}} A\n|B]\nAfter',
+          key: '\u0060\u0060\u0060key',
+        },
+        { source: '**Heading** {{\nkey\n}} ?[A|B]\n===', depth: 1 },
+        { source: '**Heading** {{\nkey\n}} ?[A|B]\n---', depth: 2 },
+      ]) {
+        const source = wrap(sample.source);
+        for (const value of [
+          source,
+          Buffer.from(source),
+          new TextEncoder().encode(source),
+        ]) {
+          const tree = render({ value }, plugin);
+          const found = interactions(tree);
+          assert.equal(found.length, 1, source);
+          assert.deepEqual(found[0].buttonTexts, ['A', 'B'], source);
+          assert.equal(found[0].variableName, sample.key, source);
+          const nodes = [];
+          const walk = node => {
+            nodes.push(node);
+            (node.children ?? []).forEach(walk);
+          };
+          walk(tree);
+          assert.equal(
+            nodes.filter(node => node.type === 'paragraph').length,
+            sample.depth ? 0 : 1,
+            source
+          );
+          if (sample.depth) {
+            const headings = nodes.filter(node => node.type === 'heading');
+            assert.equal(headings.length, 1, source);
+            assert.equal(headings[0].depth, sample.depth, source);
+          }
+        }
+      }
+    }
+    // Outside the marker, document containers and flow blocks resume their normal priority.
+    for (const [suffix, type] of [
+      ['- Item', 'list'],
+      ['> Quote', 'blockquote'],
+      ['<div>\nHTML\n</div>', 'html'],
+      ['# Heading', 'heading'],
+    ]) {
+      const source = `{{\nkey\n}}\n${suffix}`;
+      const tree = render(source, plugin);
+      assert.deepEqual(
+        tree.children.map(node => node.type),
+        ['paragraph', type],
+        source
+      );
+    }
+    const source = 'Before\n- Item\n\n{{\nkey\n}}';
+    assert.deepEqual(
+      render(source, plugin).children.map(node => node.type),
+      ['paragraph', 'list', 'paragraph'],
+      source
+    );
+  }
+});

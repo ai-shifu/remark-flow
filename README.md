@@ -241,7 +241,9 @@ Tokenized trees preserve raw NUL provenance, so `parse` followed by `runSync` re
 NUL-containing names even without passing the source again. Literal U+FFFD remains a valid key
 character. Token serialization also removes block quote and list prefixes from multiline markers.
 Block-looking text inside a multiline marker remains part of its name; a real enclosing code
-fence still keeps its contents literal. Surrounding prose retains its paragraph boundaries.
+fence still keeps its contents literal. ATX and Setext headings retain their heading level, and
+surrounding prose retains its paragraph boundaries. Marker-looking text inside inline code or
+HTML stays in that Markdown context.
 An external tree that already lost the distinction between NUL and U+FFFD cannot recover it.
 
 ## 📖 API Reference

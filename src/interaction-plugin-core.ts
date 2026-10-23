@@ -8,7 +8,6 @@ import { readInteraction } from './escaping';
 import {
   INTERACTION_NODE,
   VARIABLE_NODE,
-  OPAQUE_PARAGRAPH,
   TOKENIZED_TREE,
 } from './interaction-syntax';
 import { readVariableMarker, trimVariablePadding } from './variable-name';
@@ -99,41 +98,6 @@ export function transformInteractionsInTree(
   const parser = new InteractionParser();
 
   if (rootData?.[TOKENIZED_TREE] === true) {
-    const opaque = new WeakSet<Node>();
-    visit(tree, 'paragraph', (node: Node) => {
-      const data = node.data as Record<string, unknown> | undefined;
-      if (!data?.[OPAQUE_PARAGRAPH]) return;
-      opaque.add(node);
-      delete data[OPAQUE_PARAGRAPH];
-      if (!Object.keys(data).length) delete node.data;
-    });
-    visit(tree, (node: Node) => {
-      if (!('children' in node) || !Array.isArray(node.children)) return;
-      const parent = node as Parent;
-      let index = 1;
-      while (index < parent.children.length) {
-        const left = parent.children[index - 1];
-        const right = parent.children[index];
-        if (
-          left.type === 'paragraph' &&
-          right.type === 'paragraph' &&
-          (opaque.has(left) || opaque.has(right)) &&
-          left.position &&
-          right.position &&
-          left.position.end.line + 1 === right.position.start.line
-        ) {
-          (left as Parent).children.push(
-            { type: 'text', value: '\n' } as Literal,
-            ...(right as Parent).children
-          );
-          left.position.end = right.position.end;
-          opaque.add(left);
-          parent.children.splice(index, 1);
-        } else {
-          index += 1;
-        }
-      }
-    });
     visit(
       tree,
       VARIABLE_NODE,

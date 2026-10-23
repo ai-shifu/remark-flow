@@ -32,6 +32,31 @@ interface Effects {
   enter(type: string, fields?: Partial<Token>): Token;
   exit(type: string): Token;
   consume(code: Code): void;
+  check(construct: Construct, ok: State, nok: State): State;
+  interrupt(construct: unknown, ok: State, nok: State): State;
+}
+
+interface Construct {
+  name?: string;
+  partial?: boolean;
+  concrete?: boolean;
+  tokenize: (
+    this: FlowContext,
+    effects: Effects,
+    ok: State,
+    nok: State
+  ) => State;
+}
+
+interface FlowContext {
+  interrupt?: boolean;
+  currentConstruct: Construct;
+  parser: {
+    constructs: {
+      flow: Record<string, Construct[]>;
+      text: Record<number, Construct[]>;
+    };
+  };
 }
 
 interface Token {
@@ -40,6 +65,7 @@ interface Token {
   contentType?: string;
   previous?: Token;
   next?: Token;
+  flowHeadingDepth?: number;
 }
 
 interface TokenizeContext {
@@ -53,6 +79,7 @@ interface CompileContext {
       value?: string;
       children?: unknown[];
       data?: Record<string, unknown>;
+      depth?: number;
     },
     token: Token
   ): unknown;
@@ -75,6 +102,7 @@ interface CompileContext {
 export const INTERACTION_NODE = 'flowInteraction';
 export const VARIABLE_NODE = 'flowVariableMarker';
 export const OPAQUE_PARAGRAPH = 'flowOpaqueParagraph';
+const OPAQUE_HEADING = 'flowOpaqueHeading';
 
 /**
  * Set on the root of a tree parsed with this construct registered.
@@ -89,7 +117,12 @@ const QUESTION_MARK = 63;
 const LEFT_BRACKET = 91;
 const RIGHT_BRACKET = 93;
 const LEFT_PAREN = 40;
+const LESS_THAN = 60;
 const BACKSLASH = 92;
+const BACKTICK = 96;
+const NUMBER_SIGN = 35;
+const SPACE = 32;
+const HEADING_DEPTH_MAX = 6;
 const LEFT_BRACE = 123;
 const RIGHT_BRACE = 125;
 // The characters a backslash escapes inside an interaction: `|`, `/`, `.`, `]`. Mirrors ESCAPABLE.
@@ -335,25 +368,110 @@ function tokenizeVariable(
 
 /** Keep block-looking lines inside a multiline marker in the same inline text stream. */
 function tokenizeOpaqueParagraph(
-  this: unknown,
+  this: FlowContext,
   effects: Effects,
   ok: State,
   nok: State
 ): State {
+  return tokenizeOpaqueBlock(this, effects, ok, nok, false);
+}
+
+/** The same marker ownership applies when its opening is inside an ATX heading. */
+function tokenizeOpaqueHeading(
+  this: FlowContext,
+  effects: Effects,
+  ok: State,
+  nok: State
+): State {
+  return tokenizeOpaqueBlock(this, effects, ok, nok, true);
+}
+
+function tokenizeOpaqueBlock(
+  context: FlowContext,
+  effects: Effects,
+  ok: State,
+  nok: State,
+  heading: boolean,
+  probe = false
+): State {
   let marker = false;
   let brace = false;
   let multiline = false;
+  let interaction = false;
+  let question = false;
+  let headingDepth = 0;
+  let checkedSize = 0;
+  let codeOpeningSize = 0;
   let chunk: Token;
+  let outer: Token;
+  const outerType = heading ? OPAQUE_HEADING : 'content';
+  const html = context.parser.constructs.text[LESS_THAN]?.find(
+    construct => construct.name === 'htmlText'
+  );
+  const continuationConstruct = { partial: true, tokenize: continuation };
+  const markerLineConstruct = { partial: true, tokenize: markerLine };
+  const active = { ...context.currentConstruct, concrete: true };
+  const inactive = { ...context.currentConstruct, concrete: false };
+  // A flow lookahead can request another document line (notably GFM tables).
+  // Keep this concrete construct active while probing, so list containers cannot
+  // start inside a marker before that speculative lookahead has rolled back.
+  const interruptFlow = Object.fromEntries(
+    Object.entries(context.parser.constructs.flow).map(([code, constructs]) => [
+      code,
+      constructs.map(construct => ({ ...construct, partial: true })),
+    ])
+  );
   return start;
 
   function start(code: Code): State | undefined {
-    effects.enter(OPAQUE_PARAGRAPH);
+    // The continuation check must use Markdown's other block constructs without
+    // recursively starting another speculative opaque paragraph.
+    if (context.interrupt) return nok(code);
+    if (!probe) context.currentConstruct = inactive;
+    outer = effects.enter(outerType);
+    if (heading) {
+      effects.enter(MARKER);
+      return headingSequence(code);
+    }
+    effects.enter('paragraph');
+    return beforeContent(code);
+  }
+
+  function headingSequence(code: Code): State | undefined {
+    if (code === NUMBER_SIGN) {
+      if (++headingDepth > HEADING_DEPTH_MAX) return nok(code);
+      effects.consume(code);
+      return headingSequence;
+    }
+    if (code !== null && !isLineEnding(code) && !isSpace(code))
+      return nok(code);
+    outer.flowHeadingDepth = headingDepth;
+    return headingPadding(code);
+  }
+
+  function headingPadding(code: Code): State | undefined {
+    if (isSpace(code)) {
+      effects.consume(code);
+      return headingPadding;
+    }
+    effects.exit(MARKER);
+    return beforeContent(code);
+  }
+
+  function beforeContent(code: Code): State | undefined {
+    if (code === null || isLineEnding(code)) return nok(code);
     chunk = effects.enter('chunkText', { contentType: 'text' });
     return content(code);
   }
 
   function content(code: Code): State | undefined {
     if (code === null || isLineEnding(code)) {
+      if (probe) {
+        if (!marker || code === null) return nok(code);
+        effects.exit('chunkText');
+        closeOuter();
+        return ok(code);
+      }
       if (marker && code !== null) {
         multiline = true;
         brace = false;
@@ -361,12 +479,52 @@ function tokenizeOpaqueParagraph(
         effects.exit('chunkText');
         return nextLine;
       }
-      if (!multiline) return nok(code);
-      effects.exit('chunkText');
-      effects.exit(OPAQUE_PARAGRAPH);
-      return ok(code);
+      if (code !== null && !heading) {
+        return effects.check(continuationConstruct, continueLine, finish)(code);
+      }
+      return finish(code);
     }
+    if (!marker) {
+      // Inline code and HTML already own their braces. Check before claiming a
+      // marker so a later real code fence remains in Markdown's flow.
+      if (!interaction && code === BACKTICK) {
+        checkedSize = 0;
+        codeOpeningSize = 0;
+        return effects.check(
+          { partial: true, tokenize: codeSpan },
+          skipChecked,
+          skipCodeOpening
+        )(code);
+      }
+      if (!interaction && code === LESS_THAN && html) {
+        checkedSize = 0;
+        return effects.check(
+          { partial: true, tokenize: htmlSpan },
+          skipChecked,
+          ordinary
+        )(code);
+      }
+      if (heading && isSpace(code)) {
+        checkedSize = 0;
+        return effects.check(
+          { partial: true, tokenize: headingTail },
+          headingEnd,
+          skipChecked
+        )(code);
+      }
+      if (code === BACKSLASH) {
+        effects.consume(code);
+        brace = false;
+        question = false;
+        return escaped;
+      }
+    }
+    return ordinary(code);
+  }
+
+  function ordinary(code: Code): State | undefined {
     effects.consume(code);
+    const wasMarker = marker;
     if (marker) {
       if (brace && code === RIGHT_BRACE) {
         marker = false;
@@ -380,27 +538,242 @@ function tokenizeOpaqueParagraph(
     } else {
       brace = code === LEFT_BRACE;
     }
+    if (!probe && wasMarker !== marker) {
+      context.currentConstruct = marker ? active : inactive;
+    }
+    if (!marker) {
+      if (question && code === LEFT_BRACKET) interaction = true;
+      if (code === RIGHT_BRACKET) interaction = false;
+      question = code === QUESTION_MARK;
+    }
     return content;
+  }
+
+  function escaped(code: Code): State | undefined {
+    if (interaction && (code === null || !ESCAPABLE_CODES.has(code))) {
+      return content(code);
+    }
+    if (code === null || isLineEnding(code)) return content(code);
+    effects.consume(code);
+    return content;
+  }
+
+  function codeSpan(check: Effects, yes: State, no: State): State {
+    let opening = 0;
+    let closing = 0;
+    return open;
+    function consume(code: Code): void {
+      check.consume(code);
+      checkedSize++;
+    }
+    function open(code: Code): State | undefined {
+      if (code === BACKTICK) {
+        opening++;
+        codeOpeningSize++;
+        consume(code);
+        return open;
+      }
+      return body(code);
+    }
+    function body(code: Code): State | undefined {
+      if (code === null) return no(code);
+      if (isLineEnding(code)) {
+        if (probe) return no(code);
+        return check.check(continuationConstruct, line, no)(code);
+      }
+      if (code === BACKTICK) {
+        closing = 0;
+        return close(code);
+      }
+      consume(code);
+      return body;
+    }
+    function line(code: Code): State | undefined {
+      consume(code);
+      return body;
+    }
+    function close(code: Code): State | undefined {
+      if (code === BACKTICK) {
+        closing++;
+        consume(code);
+        return close;
+      }
+      return closing === opening ? yes(code) : body(code);
+    }
+  }
+
+  function htmlSpan(
+    this: FlowContext,
+    check: Effects,
+    yes: State,
+    no: State
+  ): State {
+    // Keep micromark's own HTML grammar, including quoted attributes and comments.
+    if (!html) return no;
+    return html.tokenize.call(
+      this,
+      {
+        ...check,
+        consume(code) {
+          checkedSize++;
+          check.consume(code);
+        },
+      },
+      yes,
+      no
+    );
+  }
+
+  function skipChecked(code: Code): State | undefined {
+    if (!checkedSize) return content(code);
+    effects.consume(code);
+    checkedSize--;
+    brace = false;
+    question = false;
+    if (isLineEnding(code)) {
+      effects.exit('chunkText');
+      return nextCheckedLine;
+    }
+    return skipChecked;
+  }
+
+  function nextCheckedLine(code: Code): State | undefined {
+    openNextChunk();
+    return skipChecked(code);
+  }
+
+  function skipCodeOpening(code: Code): State | undefined {
+    checkedSize = codeOpeningSize;
+    return skipChecked(code);
+  }
+
+  function headingTail(check: Effects, yes: State, no: State): State {
+    let hashes = false;
+    return padding;
+    function consume(code: Code): void {
+      check.consume(code);
+      checkedSize++;
+    }
+    function padding(code: Code): State | undefined {
+      if (isSpace(code)) {
+        consume(code);
+        return padding;
+      }
+      return sequence(code);
+    }
+    function sequence(code: Code): State | undefined {
+      if (code === NUMBER_SIGN) {
+        hashes = true;
+        consume(code);
+        return sequence;
+      }
+      if (!hashes) return no(code);
+      return after(code);
+    }
+    function after(code: Code): State | undefined {
+      if (isSpace(code)) {
+        consume(code);
+        return after;
+      }
+      return code === null || isLineEnding(code) ? yes(code) : no(code);
+    }
+  }
+
+  function headingEnd(code: Code): State | undefined {
+    if (!multiline) return nok(code);
+    effects.exit('chunkText');
+    effects.enter(MARKER);
+    return headingEndTail(code);
+  }
+
+  function headingEndTail(code: Code): State | undefined {
+    if (checkedSize) {
+      effects.consume(code);
+      checkedSize--;
+      return headingEndTail;
+    }
+    effects.exit(MARKER);
+    effects.exit(outerType);
+    return ok(code);
   }
 
   function nextLine(code: Code): State | undefined {
     if (code === null) {
-      effects.exit(OPAQUE_PARAGRAPH);
+      closeOuter();
       return ok(code);
     }
+    openNextChunk();
+    return content(code);
+  }
+
+  function openNextChunk(): void {
     chunk.next = effects.enter('chunkText', {
       contentType: 'text',
       previous: chunk,
     });
     chunk = chunk.next;
-    return content(code);
+  }
+
+  function closeOuter(): void {
+    if (!heading) effects.exit('paragraph');
+    effects.exit(outerType);
+  }
+
+  function finish(code: Code): State | undefined {
+    if (!multiline) return nok(code);
+    effects.exit('chunkText');
+    closeOuter();
+    return ok(code);
+  }
+
+  function continueLine(code: Code): State | undefined {
+    effects.consume(code);
+    effects.exit('chunkText');
+    return nextLine;
+  }
+
+  function continuation(check: Effects, yes: State, no: State): State {
+    return line;
+    function line(code: Code): State | undefined {
+      check.consume(code);
+      return prefix;
+    }
+    function prefix(code: Code): State | undefined {
+      if (isSpace(code)) {
+        check.consume(code);
+        return prefix;
+      }
+      if (code === null || isLineEnding(code)) return no(code);
+      return check.check(
+        markerLineConstruct,
+        yes,
+        check.interrupt(interruptFlow, no, yes)
+      )(code);
+    }
+  }
+
+  function markerLine(
+    this: FlowContext,
+    check: Effects,
+    yes: State,
+    no: State
+  ): State {
+    return tokenizeOpaqueBlock(this, check, yes, no, false, true);
   }
 }
+
+const isSpace = (code: Code): boolean =>
+  code === SPACE || code === HORIZONTAL_TAB || code === VIRTUAL_SPACE;
 
 /** The micromark syntax extension: `?` may open an interaction wherever inline text is read. */
 export function interactionSyntax(): Record<string, unknown> {
   return {
     flow: {
+      [NUMBER_SIGN]: {
+        name: OPAQUE_HEADING,
+        concrete: true,
+        tokenize: tokenizeOpaqueHeading,
+      },
       null: {
         name: OPAQUE_PARAGRAPH,
         concrete: true,
@@ -426,13 +799,9 @@ export function interactionFromMarkdown(): Record<string, unknown> {
       },
     ],
     enter: {
-      [OPAQUE_PARAGRAPH](this: CompileContext, token: Token) {
+      [OPAQUE_HEADING](this: CompileContext, token: Token) {
         this.enter(
-          {
-            type: 'paragraph',
-            children: [],
-            data: { [OPAQUE_PARAGRAPH]: true },
-          },
+          { type: 'heading', depth: token.flowHeadingDepth, children: [] },
           token
         );
       },
@@ -444,7 +813,7 @@ export function interactionFromMarkdown(): Record<string, unknown> {
       },
     },
     exit: {
-      [OPAQUE_PARAGRAPH](this: CompileContext, token: Token) {
+      [OPAQUE_HEADING](this: CompileContext, token: Token) {
         this.exit(token);
       },
       [VARIABLE](this: CompileContext, token: Token) {
