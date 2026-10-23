@@ -881,8 +881,8 @@ export function parseInteractionSyntax(content: string): InteractionData;
 
 ```bash
 # 1. Environment check
-node --version              # Should be ≥16
-npm --version              # Should be ≥8
+node --version              # Should match .nvmrc (22.23.4)
+npm --version              # Node.js 22 includes npm 10; publishing installs npm 12
 npx tsc --version          # TypeScript version
 
 # 2. Project health check
