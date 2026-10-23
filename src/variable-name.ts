@@ -13,10 +13,28 @@ const NAME_CHARACTER_SOURCE = `(?:(?!\\}\\})[^${CONTROL_SOURCE}])`;
 const NAME_EDGE_SOURCE = `(?:(?!\\}\\})[^${CONTROL_SOURCE}${PYTHON_WHITESPACE_SOURCE}])`;
 export const VARIABLE_NAME_SOURCE = `${NAME_EDGE_SOURCE}(?:${NAME_CHARACTER_SOURCE}*?${NAME_EDGE_SOURCE})?`;
 const PADDING_SOURCE = `[${PYTHON_WHITESPACE_SOURCE}]*`;
-const PADDING = new RegExp(
-  `^[${PYTHON_WHITESPACE_SOURCE}]+|[${PYTHON_WHITESPACE_SOURCE}]+$`,
-  'gu'
-);
+
+const isPaddingCode = (code: number): boolean =>
+  (code >= 0x09 && code <= 0x0d) ||
+  (code >= 0x1c && code <= 0x20) ||
+  code === 0x85 ||
+  code === 0xa0 ||
+  code === 0x1680 ||
+  (code >= 0x2000 && code <= 0x200a) ||
+  code === 0x2028 ||
+  code === 0x2029 ||
+  code === 0x202f ||
+  code === 0x205f ||
+  code === 0x3000;
+
+/** Trim only the established Python padding set, in linear time; U+FEFF is preserved. */
+export const trimVariablePadding = (raw: string): string => {
+  let start = 0;
+  let end = raw.length;
+  while (start < end && isPaddingCode(raw.charCodeAt(start))) start += 1;
+  while (end > start && isPaddingCode(raw.charCodeAt(end - 1))) end -= 1;
+  return raw.slice(start, end);
+};
 
 /** A variable reference, with its normalized name in the first capture group. */
 export const VARIABLE_REFERENCE_SOURCE = `\\{\\{${PADDING_SOURCE}(${VARIABLE_NAME_SOURCE})${PADDING_SOURCE}\\}\\}`;
@@ -29,19 +47,32 @@ export const VARIABLE_ASSIGNMENT_SOURCE = `%${VARIABLE_REFERENCE_SOURCE}`;
 export const RAW_VARIABLE_BODY_SOURCE = '(?:(?!\\}\\})[\\s\\S])*';
 export const RAW_VARIABLE_MARKER_SOURCE = `\\{\\{${RAW_VARIABLE_BODY_SOURCE}\\}\\}`;
 
-const VARIABLE_NAME = new RegExp(`^${VARIABLE_NAME_SOURCE}$`, 'u');
-
 /** Trim marker padding without changing a name's punctuation, case or Unicode. */
 export const normalizeVariableName = (raw: string): string | null => {
-  const name = raw.replace(PADDING, '');
-  return VARIABLE_NAME.test(name) ? name : null;
+  const name = trimVariablePadding(raw);
+  if (!name) return null;
+  for (let index = 0; index < name.length; index += 1) {
+    const code = name.charCodeAt(index);
+    if (
+      code <= 0x1f ||
+      (code >= 0x7f && code <= 0x9f) ||
+      code === 0x2028 ||
+      code === 0x2029 ||
+      (code === 0x7d && name.charCodeAt(index + 1) === 0x7d)
+    )
+      return null;
+  }
+  return name;
 };
 
 /** Whether a name, after trimming marker padding, follows the shared grammar. */
 export const isValidVariableName = (raw: string): boolean =>
   normalizeVariableName(raw) !== null;
 
-/** Create an independent expression matcher so callers never share a regex's lastIndex. */
+/**
+ * Create an independent valid-token matcher. Anchor its source when validating a complete
+ * token; scan arbitrary documents with findVariableMarkers instead of a restarting regex.
+ */
 export const createVariableExpressionRegex = (flags = 'g'): RegExp =>
   new RegExp(VARIABLE_REFERENCE_SOURCE, flags);
 

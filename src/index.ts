@@ -17,6 +17,7 @@ export {
   isValidVariableName,
   normalizeVariableName,
   readVariableMarker,
+  trimVariablePadding,
   VARIABLE_ASSIGNMENT_SOURCE,
   VARIABLE_NAME_SOURCE,
   VARIABLE_REFERENCE_SOURCE,

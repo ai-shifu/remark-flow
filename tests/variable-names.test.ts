@@ -8,6 +8,7 @@ import {
   isValidVariableName,
   normalizeVariableName,
   readVariableMarker,
+  trimVariablePadding,
   VARIABLE_ASSIGNMENT_SOURCE,
   VARIABLE_NAME_SOURCE,
   VARIABLE_REFERENCE_SOURCE,
@@ -47,6 +48,16 @@ const names = [
 ];
 
 describe('the shared variable-name grammar', () => {
+  test('preserves a long internal padding run without treating it as edge padding', () => {
+    const name = `a${' '.repeat(65536)}b`;
+    expect(trimVariablePadding(`\u0085 ${name} \t`)).toBe(name);
+    expect(normalizeVariableName(` ${name} `)).toBe(name);
+    expect(extractVariableNames(`{{ ${name} }}`)).toEqual([name]);
+    const pattern = new RegExp(`^${VARIABLE_REFERENCE_SOURCE}$`, 'u');
+    expect(pattern.exec(`{{ ${name} }}`)?.[1]).toBe(name);
+    expect(pattern.exec(`{{ ${name}`)).toBeNull();
+    expect(readVariableMarker(`{{ ${name}`)).toBeNull();
+  });
   test.each(names)('keeps the exact name %s', name => {
     expect(normalizeVariableName(` ${name} `)).toBe(name);
     expect(isValidVariableName(name)).toBe(true);
