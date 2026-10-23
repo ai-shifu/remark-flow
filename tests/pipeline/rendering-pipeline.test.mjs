@@ -520,6 +520,61 @@ test('string and byte-valued VFiles preserve raw key validity through every plug
   }
 });
 
+test('a closed marker does not make an unclosed interaction own subsequent Markdown', () => {
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const prefix of [
+      '?[A {{name}}',
+      '?[%{{name}}',
+      '?[A {{bad\u0000key}}',
+    ]) {
+      for (const wrap of containers) {
+        const source = wrap(
+          `${prefix} **strong**\n*emphasis*\n\n# Heading\n\n\u0060\u0060\u0060js\ncode\n\u0060\u0060\u0060\n\n- Item`
+        );
+        for (const value of [
+          source,
+          Buffer.from(source),
+          new TextEncoder().encode(source),
+        ]) {
+          const tree = render({ value }, plugin);
+          assert.equal(interactions(tree).length, 0, source);
+          const found = [];
+          const walk = node => {
+            found.push(node.type);
+            (node.children ?? []).forEach(walk);
+          };
+          walk(tree);
+          for (const type of [
+            'strong',
+            'emphasis',
+            'heading',
+            'code',
+            'list',
+          ]) {
+            assert.ok(
+              found.includes(type),
+              `${type} survives ${JSON.stringify(source)}`
+            );
+          }
+        }
+      }
+    }
+  }
+});
+
 test('shared marker boundaries are atomic in every actual Markdown plugin path', () => {
   for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
     for (const sample of contractCases.boundary_cases) {

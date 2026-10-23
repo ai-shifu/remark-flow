@@ -137,7 +137,6 @@ function tokenizeInteraction(
   nok: State
 ): State {
   const finish = () => preserveTokenNulls(this, effects.exit(INTERACTION));
-  let hasMarker = false;
   return start;
 
   // Every character is consumed inside a token of its own kind -- the `?[` and `]` markers, the
@@ -162,10 +161,6 @@ function tokenizeInteraction(
   // Data is only opened on a character it will hold: micromark rejects an empty token.
   function beforeContent(code: Code): State | undefined {
     if (code === null) {
-      if (hasMarker) {
-        finish();
-        return ok(code);
-      }
       return nok(code);
     }
     if (code === RIGHT_BRACKET) {
@@ -181,7 +176,6 @@ function tokenizeInteraction(
   function variableSecondBrace(code: Code): State | undefined {
     if (code !== LEFT_BRACE) return content(code);
     effects.consume(code);
-    hasMarker = true;
     return variableBody;
   }
 
@@ -236,11 +230,6 @@ function tokenizeInteraction(
 
   function content(code: Code): State | undefined {
     if (code === null) {
-      if (hasMarker) {
-        effects.exit(DATA);
-        finish();
-        return ok(code);
-      }
       return nok(code);
     }
     if (code === RIGHT_BRACKET) {
