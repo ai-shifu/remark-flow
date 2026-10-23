@@ -234,9 +234,12 @@ formatVariableAssignment('Which [path] | level?'); // '%{{ Which [path] | level?
 and returns each name once. It does not change the host's policy for which source to inspect.
 Complete markers inside code, HTML, math, or link-resource examples are still collected, while incomplete examples stay
 inside their closing literal boundary and cannot hide a later variable. This includes fence info
-strings, quote/list-contained fences, indented code that starts a block, ordinary HTML blocks
+strings, quote/list-contained fences, indented code that starts a block, reference-definition
+destinations and titles, ordinary HTML blocks
 ending at a blank line, and raw `script`, `style`, `pre`, or `textarea` blocks. Physical lines use
 LF, CRLF, or CR; other Unicode separators do not create Markdown line boundaries.
+Document interaction candidates stop at a blank line outside an opaque marker. The raw
+interaction reader keeps its context-free behavior.
 Markdown-escaped opening
 braces do not start a document marker. The raw readers below do not interpret Markdown context.
 Use `findDocumentVariableMarkers(text)` when editors or document readers need marker ranges.

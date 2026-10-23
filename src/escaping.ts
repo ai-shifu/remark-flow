@@ -233,9 +233,10 @@ export interface InteractionSpan {
 }
 
 /** Read one interaction without restarting inside a complete or unfinished raw marker. */
-export const readInteraction = (
+const readInteractionWithin = (
   text: string,
-  start = 0
+  start: number,
+  boundary?: (index: number) => boolean
 ): InteractionSpan | null => {
   if (!text.startsWith('?[', start)) return null;
   let index = start + 2;
@@ -245,6 +246,14 @@ export const readInteraction = (
       if (!marker) break;
       index = marker.end;
       continue;
+    }
+    if (boundary?.(index)) {
+      return {
+        start,
+        end: index,
+        content: text.slice(start + 2, index),
+        complete: false,
+      };
     }
     if (isEscape(text, index)) {
       index += 2;
@@ -268,3 +277,16 @@ export const readInteraction = (
     complete: false,
   };
 };
+
+/** Read the raw interaction grammar without imposing Markdown paragraph boundaries. */
+export const readInteraction = (
+  text: string,
+  start = 0
+): InteractionSpan | null => readInteractionWithin(text, start);
+
+/** @internal Bound document candidates without changing the raw interaction reader. */
+export const readDocumentInteraction = (
+  text: string,
+  start: number,
+  boundary: (index: number) => boolean
+): InteractionSpan | null => readInteractionWithin(text, start, boundary);

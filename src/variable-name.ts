@@ -1,6 +1,6 @@
 export * from './variable-marker';
 
-import { readInteraction } from './escaping';
+import { readDocumentInteraction } from './escaping';
 import { readVariableMarker, VariableMarker } from './variable-marker';
 
 interface LiteralSpan {
@@ -48,6 +48,8 @@ const RESOURCE_SPACE = /[\t\n\r ]/;
 const MARKDOWN_PUNCTUATION = /[!-/:-@[-`{-~]/;
 const MAX_LINK_DESTINATION_DEPTH = 32;
 const ATX_HEADING_LINE = /^ {0,3}#{1,6}(?:[ \t]|$)/;
+const THEMATIC_BREAK_LINE =
+  /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/;
 const INLINE_CODE_BREAK_LINE =
   /^[ \t]*\r?$|^ {0,3}(?:`{3,}[^`\r\n]*|~{3,}[^\r\n]*)\r?$/;
 
@@ -137,13 +139,10 @@ function htmlLiteralEnd(
 function indentedCodeEnd(
   text: string,
   lines: readonly DocumentLine[],
-  index: number
+  index: number,
+  followsBlock: boolean
 ): number | null {
-  if (index > 0) {
-    const previous = lines[index - 1];
-    if (!/^[\t ]*$/.test(text.slice(previous.start, previous.contentEnd)))
-      return null;
-  }
+  if (index > 0 && !followsBlock) return null;
   let lastContentEnd: number | null = null;
   for (; index < lines.length; index++) {
     const { start, contentEnd } = lines[index];
@@ -208,19 +207,23 @@ function blankLineAfter(text: string, cursor: number): boolean {
   return text[next] === '\n' || text[next] === '\r';
 }
 
-/** Read only a complete link resource after a previously matched label. */
-function linkResourceEnd(text: string, start: number): number | null {
-  let cursor = start + 1;
-  const skipSpace = (): boolean => {
-    while (cursor < text.length && RESOURCE_SPACE.test(text[cursor])) {
-      if (blankLineAfter(text, cursor)) return false;
-      cursor++;
-    }
-    return true;
-  };
+function resourceSpaceEnd(text: string, cursor: number): number | null {
+  while (cursor < text.length && RESOURCE_SPACE.test(text[cursor])) {
+    if (blankLineAfter(text, cursor)) return null;
+    cursor++;
+  }
+  return cursor;
+}
+
+/** Shared destination reader; native reference definitions have no nesting-depth cap. */
+function resourceDestinationEnd(
+  text: string,
+  start: number,
+  maxDepth = MAX_LINK_DESTINATION_DEPTH
+): number | null {
+  let cursor = start;
   const escaped = () =>
     text[cursor] === '\\' && MARKDOWN_PUNCTUATION.test(text[cursor + 1] ?? '');
-  if (!skipSpace()) return null;
   if (text[cursor] === '<') {
     cursor++;
     while (cursor < text.length && text[cursor] !== '>') {
@@ -239,7 +242,7 @@ function linkResourceEnd(text: string, start: number): number | null {
     while (cursor < text.length && !RESOURCE_SPACE.test(text[cursor])) {
       if (escaped()) cursor += 2;
       else if (text[cursor] === '(') {
-        if (++depth > MAX_LINK_DESTINATION_DEPTH) return null;
+        if (++depth > maxDepth) return null;
         cursor++;
       } else if (text[cursor] === ')') {
         if (depth === 0) break;
@@ -253,10 +256,13 @@ function linkResourceEnd(text: string, start: number): number | null {
     }
     if (depth) return null;
   }
-  const destinationEnd = cursor;
-  if (!skipSpace()) return null;
-  if (text[cursor] === ')') return cursor + 1;
-  if (cursor === destinationEnd) return null;
+  return cursor;
+}
+
+function resourceTitleEnd(text: string, start: number): number | null {
+  let cursor = start;
+  const escaped = () =>
+    text[cursor] === '\\' && MARKDOWN_PUNCTUATION.test(text[cursor + 1] ?? '');
   const quote = text[cursor];
   const closing = quote === '(' ? ')' : quote;
   if (!['"', "'", '('].includes(quote)) return null;
@@ -265,10 +271,60 @@ function linkResourceEnd(text: string, start: number): number | null {
     if (blankLineAfter(text, cursor)) return null;
     cursor += escaped() ? 2 : 1;
   }
-  if (text[cursor] !== closing) return null;
-  cursor++;
-  if (!skipSpace()) return null;
+  return text[cursor] === closing ? cursor + 1 : null;
+}
+
+/** Read only a complete link resource after a previously matched label. */
+function linkResourceEnd(text: string, start: number): number | null {
+  let cursor = resourceSpaceEnd(text, start + 1);
+  if (cursor === null) return null;
+  cursor = resourceDestinationEnd(text, cursor);
+  if (cursor === null) return null;
+  const destinationEnd = cursor;
+  cursor = resourceSpaceEnd(text, cursor);
+  if (cursor === null) return null;
+  if (text[cursor] === ')') return cursor + 1;
+  if (cursor === destinationEnd) return null;
+  cursor = resourceTitleEnd(text, cursor);
+  if (cursor === null) return null;
+  cursor = resourceSpaceEnd(text, cursor);
+  if (cursor === null) return null;
   return text[cursor] === ')' ? cursor + 1 : null;
+}
+
+/** Bound valid reference resources, reusing the inline destination and title readers. */
+function referenceDefinitionEnd(
+  text: string,
+  lines: readonly DocumentLine[],
+  index: number
+): number | null {
+  const line = lines[index];
+  const label = /^ {0,3}\[((?:\\[^\r\n]|[^[\]\\\r\n]){1,999})\]:/.exec(
+    text.slice(line.start, line.contentEnd)
+  );
+  if (!label || /^[\t ]*$/.test(label[1])) return null;
+  let cursor = resourceSpaceEnd(text, line.start + label[0].length);
+  if (cursor === null) return null;
+  const destinationStart = cursor;
+  const destinationEnd = resourceDestinationEnd(text, cursor, Infinity);
+  if (destinationEnd === null || destinationEnd === destinationStart)
+    return null;
+  cursor = destinationEnd;
+  while (text[cursor] === ' ' || text[cursor] === '\t') cursor++;
+  const destinationLineEnd = cursor;
+  const lineEnded =
+    cursor === text.length || text[cursor] === '\r' || text[cursor] === '\n';
+  if (lineEnded) {
+    cursor = resourceSpaceEnd(text, cursor);
+    if (cursor === null) return destinationLineEnd;
+  } else if (cursor === destinationEnd) return null;
+  const titleEnd = resourceTitleEnd(text, cursor);
+  if (titleEnd === null) return lineEnded ? destinationLineEnd : null;
+  cursor = titleEnd;
+  while (text[cursor] === ' ' || text[cursor] === '\t') cursor++;
+  if (cursor === text.length || text[cursor] === '\r' || text[cursor] === '\n')
+    return cursor;
+  return lineEnded ? destinationLineEnd : null;
 }
 
 /** Index same-width code/math closers without pairing across native paragraph boundaries. */
@@ -515,10 +571,29 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
     }
   };
   let cursor = 0;
+  let blockEndedAt = -1;
   while (cursor < text.length) {
     const lineIndex = lineStarts.get(cursor);
     if (lineIndex !== undefined) {
       const previous = lines[lineIndex - 1];
+      const previousText = previous
+        ? text.slice(previous.start, previous.contentEnd)
+        : '';
+      const followsBlock =
+        !previous ||
+        /^[\t ]*$/.test(previousText) ||
+        ATX_HEADING_LINE.test(previousText) ||
+        THEMATIC_BREAK_LINE.test(previousText) ||
+        previous.contentEnd === blockEndedAt;
+      const definitionEnd = followsBlock
+        ? referenceDefinitionEnd(text, lines, lineIndex)
+        : null;
+      if (definitionEnd !== null) {
+        collectLiteral(cursor, definitionEnd);
+        blockEndedAt = definitionEnd;
+        cursor = definitionEnd;
+        continue;
+      }
       if (
         !previous ||
         /^[\t ]*$/.test(text.slice(previous.start, previous.contentEnd))
@@ -529,10 +604,11 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
       const fence = fencedCodeSpan(text, lines, lineIndex);
       if (fence) {
         collectLiteral(cursor, fence.bodyEnd);
+        blockEndedAt = fence.end;
         cursor = fence.end;
         continue;
       }
-      const indentedEnd = indentedCodeEnd(text, lines, lineIndex);
+      const indentedEnd = indentedCodeEnd(text, lines, lineIndex, followsBlock);
       if (indentedEnd !== null) {
         collectLiteral(cursor, indentedEnd);
         cursor = indentedEnd;
@@ -573,7 +649,11 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
       cursor += 2;
       continue;
     }
-    const interaction = readInteraction(text, cursor);
+    const interaction = text.startsWith('?[', cursor)
+      ? readDocumentInteraction(text, cursor, index =>
+          blankLineAfter(text, index)
+        )
+      : null;
     if (interaction) {
       collectLiteral(
         cursor + 2,

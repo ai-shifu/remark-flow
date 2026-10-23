@@ -734,6 +734,44 @@ test('returns no marker ranges for a large literal document without openings', (
 
 describe('document container, ordinary HTML and line-ending boundaries', () => {
   test.each(['\n', '\r\n', '\r'])(
+    'bounds reference resources and completed blocks with %j',
+    eol => {
+      const question = '?[%{{ real }} A|B]';
+      for (const prefix of [
+        ['[foo]: /url "{{ unfinished"', ''],
+        ['[foo]: <{{unfinished>', ''],
+        ['[foo]: {{unfinished', ''],
+        ['[foo]: /url', '  "{{ unfinished"', ''],
+        ['# Title', '    {{ unfinished', ''],
+        ['~~~', 'code', '~~~', '    {{ unfinished', ''],
+        ['---', '    {{ unfinished', ''],
+        ['?[ unfinished', '', '`{{`', ''],
+      ]) {
+        const source = [...prefix, question].join(eol);
+        expect(extractVariableNames(source)).toEqual(['real']);
+      }
+      expect(
+        extractVariableNames(
+          `[foo]: /url "{{ example }}"${eol}${eol}${question}`
+        )
+      ).toEqual(['example', 'real']);
+      expect(
+        extractVariableNames(
+          `paragraph${eol}[foo]: /url "{{ unfinished"${eol}${eol}${question}`
+        )
+      ).toEqual([]);
+      expect(
+        extractVariableNames(
+          `paragraph${eol}    {{ unfinished${eol}${eol}${question}`
+        )
+      ).toEqual([]);
+      expect(
+        extractVariableNames(`?[ {{ unfinished${eol}${eol}${question}`)
+      ).toEqual([]);
+    }
+  );
+
+  test.each(['\n', '\r\n', '\r'])(
     'keeps literal examples local with %j line endings',
     eol => {
       for (const prefix of [

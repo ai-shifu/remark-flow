@@ -14,6 +14,7 @@
 import {
   escapeInteractionText,
   findUnescaped,
+  readInteraction,
   splitOnEllipsis,
   splitOnSingleUnescapedPipe,
   splitUnescaped,
@@ -27,6 +28,14 @@ import {
 } from '../src/index';
 
 describe('the escape rule', () => {
+  test('the raw interaction reader retains its context-free paragraph behavior', () => {
+    const source = '?[ unfinished\n\n`{{`\n\n?[%{{ real }} A|B]';
+    expect(readInteraction(source)).toMatchObject({
+      start: 0,
+      end: source.length,
+      complete: true,
+    });
+  });
   test('body markers keep their raw delimiters and escapes as literal source', () => {
     const marker = String.raw`{{ x\]y|a\/\/b... }}`;
     const content = `A ${marker} | B`;

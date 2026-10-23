@@ -60,6 +60,7 @@ interface FlowContext {
     constructs: {
       flow: Record<string, Construct[]>;
       text: Record<number, Construct[]>;
+      contentInitial?: Record<number, Construct[]>;
     };
   };
 }
@@ -427,7 +428,32 @@ function tokenizeOpaqueParagraph(
   ok: State,
   nok: State
 ): State {
-  return tokenizeOpaqueBlock(this, effects, ok, nok, false);
+  const opaque = tokenizeOpaqueBlock(this, effects, ok, nok, false);
+  const definition = this.parser.constructs.contentInitial?.[
+    LEFT_BRACKET
+  ]?.find(construct => construct.name === 'definition');
+  if (!definition || this.interrupt) return opaque;
+  return code =>
+    code === LEFT_BRACKET
+      ? effects.check(
+          {
+            partial: true,
+            tokenize(effects, yes, no) {
+              // Native definition checks register labels. Keep speculative labels local.
+              const native = Object.create(this, {
+                parser: {
+                  value: Object.create(this.parser, {
+                    defined: { value: [] },
+                  }),
+                },
+              });
+              return definition.tokenize.call(native, effects, yes, no);
+            },
+          },
+          nok,
+          opaque
+        )(code)
+      : opaque(code);
 }
 
 /** The same marker ownership applies when its opening is inside an ATX heading. */
