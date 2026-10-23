@@ -295,8 +295,10 @@ This project implements a **layered parsing architecture** with strict syntax ru
 
 #### Layer 2: Variable Detection
 
-```regex
-/^%\{\{\s*([^{}\s]+)\s*\}\}(.*)$/
+```typescript
+import { VARIABLE_ASSIGNMENT_SOURCE } from './src/variable-name';
+
+const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
 ```
 
 - **Variable names support**: Any nonempty sequence without whitespace or braces, matching the
@@ -865,6 +867,8 @@ node -e "const r=require('remark');const p=require('./dist/index.js').default;co
 #### Parser-Specific Debugging
 
 ```typescript
+import { VARIABLE_ASSIGNMENT_SOURCE } from './src/variable-name';
+
 // Enable debug mode in interaction parser
 const parser = createInteractionParser();
 const result = parser.parse('?[test content]');
@@ -884,7 +888,7 @@ console.log(
 );
 console.log(
   'Variable pattern match:',
-  /^%\{\{\s*([^{}\s]+)\s*\}\}(.*)$/.exec('%{{test}} content')
+  new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`).exec('%{{test}} content')
 );
 ```
 
