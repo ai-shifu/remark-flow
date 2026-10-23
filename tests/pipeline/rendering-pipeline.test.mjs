@@ -251,6 +251,15 @@ test('escaped options come back unchanged through the whole pipeline', () => {
   }
 });
 
+test('escaping operators preserves an unmatched marker and its tail ownership', () => {
+  const option = 'literal {{ unfinished | / ... ]';
+  assert.equal(escapeInteractionText(option), option);
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    const source = `?[${escapeInteractionText(option)} | other]`;
+    assert.deepEqual(interactions(render(source, plugin)), []);
+  }
+});
+
 test('a tree parsed elsewhere is still read the way it always was', () => {
   // `runSync` on a tree this processor did not parse: nothing in it was tokenized, so the
   // plugin must fall back to finding interactions in text, as it did before the tokenizer.

@@ -44,7 +44,10 @@ export const isEscape = (text: string, index: number): boolean =>
   ESCAPABLE.includes(text[index + 1]);
 
 /**
- * Make `text` safe to write inside `?[...]`, keeping every character it has.
+ * Escape interaction operators outside opaque variable markers.
+ *
+ * Marker source is preserved, including incomplete markers. This does not make an unmatched
+ * `{{` representable as literal option text: it still owns the remaining interaction tail.
  *
  * A dot is escaped only inside a run of three or more, because only `...` is a delimiter and a
  * single period ends most sentences: escaping every one turns `Yes, I agree.` into

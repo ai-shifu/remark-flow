@@ -190,6 +190,11 @@ markers in option content retain their exact literal source. An unclosed marker 
 remaining tail, so a `?[...]` inside it cannot become an independent interaction.
 The padding set includes U+0085 and U+001C–001F; U+FEFF is retained as part of a name.
 
+`escapeInteractionText(text)` escapes interaction operators outside variable markers and preserves
+marker source exactly. It does not close or escape an unmatched `{{`: that sequence still owns
+the remaining tail, so arbitrary text containing it cannot be embedded as a literal option with
+this helper. No additional brace-escaping syntax is introduced.
+
 ```markdown
 你的性别是？
 ?[%{{你的性别是？}} 男 | 女 | 秘密]
@@ -229,7 +234,9 @@ formatVariableAssignment('Which [path] | level?'); // '%{{ Which [path] | level?
 and returns each name once. It does not change the host's policy for which source to inspect.
 Complete markers inside code, HTML, math, or link-resource examples are still collected, while incomplete examples stay
 inside their closing literal boundary and cannot hide a later variable. This includes fence info
-strings, indented code that starts a block, and raw `script`, `style`, `pre`, or `textarea` blocks.
+strings, quote/list-contained fences, indented code that starts a block, ordinary HTML blocks
+ending at a blank line, and raw `script`, `style`, `pre`, or `textarea` blocks. Physical lines use
+LF, CRLF, or CR; other Unicode separators do not create Markdown line boundaries.
 Markdown-escaped opening
 braces do not start a document marker. The raw readers below do not interpret Markdown context.
 Use `findDocumentVariableMarkers(text)` when editors or document readers need marker ranges.
