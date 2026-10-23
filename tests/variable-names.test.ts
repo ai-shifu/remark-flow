@@ -939,3 +939,84 @@ test.each(['`', '$'])(
     }
   }
 );
+
+describe('container document contexts', () => {
+  const outside = '?[%{{ real }} A|B]';
+  const containers = [
+    ['> ', '> '],
+    ['- ', '  '],
+    ['> - ', '>   '],
+    ['2. ', '   '],
+  ];
+  test.each(['\n', '\r\n', '\r'])(
+    'bounds nested literal examples with %j physical lines',
+    eol => {
+      for (const [first, rest] of containers) {
+        for (const delimiter of ['`', '$']) {
+          const source = `${first}Text ${delimiter}{{ unfinished${eol}${rest}# Heading ${delimiter} end${eol}${eol}${outside}`;
+          expect(extractVariableNames(source)).toEqual([]);
+          const continued = `${first}Text ${delimiter}{{ unfinished${eol}${rest}continued ${delimiter} end${eol}${eol}${outside}`;
+          expect(extractVariableNames(continued)).toEqual(['real']);
+        }
+        for (const [opening, closing] of [
+          ['<div>', '</div>'],
+          ['<script>', '</script>'],
+          ['<!--', '-->'],
+          ['<?x', '?>'],
+          ['<![CDATA[', ']]>'],
+          ['<!DOCTYPE', '>'],
+        ]) {
+          const source = `${first}${opening}${eol}${rest}{{ unfinished${eol}${rest}${closing}${eol}${eol}${outside}`;
+          expect(extractVariableNames(source)).toEqual(['real']);
+          const markers = findDocumentVariableMarkers(source);
+          const marker = markers[markers.length - 1];
+          expect(marker?.name).toBe('real');
+          expect(source.slice(marker?.start, marker?.end)).toBe('{{ real }}');
+        }
+        for (const resource of [
+          `[foo]: /url "{{ unfinished"`,
+          `[foo]: /url${eol}${rest}  "{{ unfinished"`,
+          `[foo]:${eol}${rest}/url "{{ unfinished"`,
+        ]) {
+          const source = `${first}${resource}${eol}${eol}${outside}`;
+          expect(extractVariableNames(source)).toEqual(['real']);
+        }
+      }
+      for (const source of [
+        `> [foo]: /url${eol}"{{ unfinished"${eol}${eol}${outside}`,
+        `> [foo]:${eol}/url "{{ unfinished"${eol}${eol}${outside}`,
+      ])
+        expect(extractVariableNames(source)).toEqual(['real']);
+      expect(
+        extractVariableNames(
+          `> Intro${eol}> [foo]: /url "{{ unfinished"${eol}${eol}${outside}`
+        )
+      ).toEqual([]);
+      expect(
+        extractVariableNames(
+          `Text \u0060{{ unfinished${eol}2. # heading${eol}\u0060 end${eol}${eol}${outside}`
+        )
+      ).toEqual(['real']);
+    }
+  );
+
+  test.each([
+    '<script>\n</script>',
+    '<!--\n-->',
+    '<?x\n?>',
+    '<![CDATA[\n]]>',
+    '<!DOCTYPE\n>',
+  ])('starts indented code after a completed %s block', prefix => {
+    expect(
+      extractVariableNames(`${prefix}\n    {{ unfinished\n\n${outside}`)
+    ).toEqual(['real']);
+  });
+
+  test.each([
+    '?[ unfinished\n~~~\n{{ x\n~~~',
+    '?[ unfinished\n# Heading',
+    '?[ unfinished\n---\n~~~\n{{ x\n~~~',
+  ])('bounds only the document interaction candidate at %s', prefix => {
+    expect(extractVariableNames(`${prefix}\n${outside}`)).toEqual(['real']);
+  });
+});

@@ -218,15 +218,21 @@ function rawHtmlSpan(
   text: string,
   start: number,
   missingClosers: Map<string, number>,
-  lines: DocumentLines
+  lines: DocumentLines,
+  blockEnd?: () => number
 ): LiteralSpan | null {
   const opening = rawHtmlOpening(text, start, missingClosers);
   if (!opening) return null;
+  const limit = blockEnd?.() ?? text.length;
+  if (opening.end > limit) return null;
   const closing = new RegExp(`</${opening.name}[ \\t\\r\\n]*>`, 'gi');
   closing.lastIndex = opening.end;
   const matched = closing.exec(text);
-  const closingEnd = matched ? matched.index + matched[0].length : text.length;
-  const end = lines.at(containingLine(lines, closingEnd)).contentEnd;
+  const closingEnd = matched ? matched.index + matched[0].length : limit;
+  const end = Math.min(
+    limit,
+    lines.at(containingLine(lines, closingEnd)).contentEnd
+  );
   return { bodyStart: opening.end, bodyEnd: end, end };
 }
 
@@ -235,7 +241,8 @@ function terminatedHtmlBlockSpan(
   text: string,
   start: number,
   missingClosers: Map<string, number>,
-  lines: DocumentLines
+  lines: DocumentLines,
+  blockEnd?: () => number
 ): LiteralSpan | null {
   const opening = /^ {0,3}<(?:!--|\?|!\[CDATA\[|![A-Z])/.exec(
     text.slice(start, start + 12)
@@ -247,7 +254,12 @@ function terminatedHtmlBlockSpan(
     missingClosers
   );
   if (tokenEnd === null) return null;
-  const end = lines.at(containingLine(lines, tokenEnd)).contentEnd;
+  const limit = blockEnd?.() ?? text.length;
+  if (tokenEnd > limit) return null;
+  const end = Math.min(
+    limit,
+    lines.at(containingLine(lines, tokenEnd)).contentEnd
+  );
   return { bodyStart: tokenEnd, bodyEnd: end, end };
 }
 
@@ -312,7 +324,11 @@ function resourceDestinationEnd(
   return cursor;
 }
 
-function resourceTitleEnd(text: string, start: number): number | null {
+function resourceTitleEnd(
+  text: string,
+  start: number,
+  blankBoundary = blankLineAfter
+): number | null {
   let cursor = start;
   const escaped = () =>
     text[cursor] === '\\' && MARKDOWN_PUNCTUATION.test(text[cursor + 1] ?? '');
@@ -321,7 +337,7 @@ function resourceTitleEnd(text: string, start: number): number | null {
   if (!['"', "'", '('].includes(quote)) return null;
   cursor++;
   while (cursor < text.length && text[cursor] !== closing) {
-    if (blankLineAfter(text, cursor)) return null;
+    if (blankBoundary(text, cursor)) return null;
     cursor += escaped() ? 2 : 1;
   }
   return text[cursor] === closing ? cursor + 1 : null;
@@ -349,14 +365,45 @@ function linkResourceEnd(text: string, start: number): number | null {
 function referenceDefinitionEnd(
   text: string,
   lines: DocumentLines,
-  index: number
+  index: number,
+  start = lines.start(index),
+  steps: readonly ContainerStep[] = [],
+  blockEnd?: () => number
 ): number | null {
   const line = lines.at(index);
   const label = /^ {0,3}\[((?:\\[^\r\n]|[^[\]\\\r\n]){1,999})\]:/.exec(
-    text.slice(line.start, line.contentEnd)
+    text.slice(start, line.contentEnd)
   );
   if (!label || /^[\t ]*$/.test(label[1])) return null;
-  let cursor = resourceSpaceEnd(text, line.start + label[0].length);
+  const limit =
+    blockEnd?.() ?? containerBlockEnd(text, lines, index, steps, true);
+  const blankBoundary = (_text: string, at: number): boolean => {
+    if (text[at] !== '\n' && text[at] !== '\r') return false;
+    const next = containingLine(lines, at) + 1;
+    if (next >= lines.length || lines.start(next) >= limit) return true;
+    const nextLine = lines.at(next);
+    const value = text.slice(nextLine.start, nextLine.contentEnd);
+    const contentStart = containerContentStart(value, steps);
+    return contentStart === null
+      ? isInlineCodeBoundaryLine(value)
+      : /^[\t ]*$/.test(value.slice(contentStart));
+  };
+  const paddingEnd = (from: number): number | null => {
+    let cursor = from;
+    for (;;) {
+      cursor = resourceSpaceEnd(text, cursor) ?? -1;
+      if (cursor < 0 || cursor >= limit) return null;
+      const current = lines.at(containingLine(lines, cursor));
+      if (!steps.length || cursor !== current.start) return cursor;
+      const value = text.slice(current.start, current.contentEnd);
+      const contentStart = containerContentStart(value, steps);
+      if (contentStart === null) return cursor;
+      if (/^[\t ]*$/.test(value.slice(contentStart))) return null;
+      if (!contentStart) return cursor;
+      cursor += contentStart;
+    }
+  };
+  let cursor = paddingEnd(start + label[0].length);
   if (cursor === null) return null;
   const destinationStart = cursor;
   const destinationEnd = resourceDestinationEnd(text, cursor, Infinity);
@@ -368,14 +415,17 @@ function referenceDefinitionEnd(
   const lineEnded =
     cursor === text.length || text[cursor] === '\r' || text[cursor] === '\n';
   if (lineEnded) {
-    cursor = resourceSpaceEnd(text, cursor);
+    cursor = paddingEnd(cursor);
     if (cursor === null) return destinationLineEnd;
   } else if (cursor === destinationEnd) return null;
-  const titleEnd = resourceTitleEnd(text, cursor);
+  const titleEnd = resourceTitleEnd(text, cursor, blankBoundary);
   if (titleEnd === null) return lineEnded ? destinationLineEnd : null;
   cursor = titleEnd;
   while (text[cursor] === ' ' || text[cursor] === '\t') cursor++;
-  if (cursor === text.length || text[cursor] === '\r' || text[cursor] === '\n')
+  if (
+    cursor <= limit &&
+    (cursor === text.length || text[cursor] === '\r' || text[cursor] === '\n')
+  )
     return cursor;
   return lineEnded ? destinationLineEnd : null;
 }
@@ -416,38 +466,33 @@ function inlineLiteralSpans(
   for (let index = 0; index < lines.length; index++) {
     const { start, contentEnd, end } = lines.at(index);
     const line = text.slice(start, contentEnd);
-    const contentStart = containerContentStart(line, container);
-    const remainder = line.slice(contentStart ?? 0);
-    const nested = containerOpening(remainder);
-    if (ATX_HEADING_LINE.test(line)) {
+    const projected = projectedContainerLine(
+      line,
+      container,
+      index === 0 ||
+        /^[\t ]*$/.test(
+          text.slice(lines.at(index - 1).start, lines.at(index - 1).contentEnd)
+        )
+    );
+    const content = line.slice(projected.contentStart);
+    if (ATX_HEADING_LINE.test(content)) {
       indexSegment(segmentStart, start);
       indexSegment(start, contentEnd);
       segmentStart = end;
-      container = [];
-    } else if (
-      CONTAINER_INTERRUPT_LINE.test(remainder) &&
-      nested.steps.length &&
-      !THEMATIC_BREAK_LINE.test(remainder)
-    ) {
+      container = projected.steps;
+    } else if (projected.entered) {
       // Entering a quote/item starts a new paragraph; its own complete and
       // continued literals keep their normal same-container matching.
       indexSegment(segmentStart, start);
       segmentStart = start;
-      container =
-        contentStart === null ? nested.steps : [...container, ...nested.steps];
+      container = projected.steps;
     } else if (
-      isInlineCodeBoundaryLine(line) ||
-      rawHtmlOpening(text, start, missingClosers)
+      isInlineCodeBoundaryLine(content) ||
+      rawHtmlOpening(text, start + projected.contentStart, missingClosers)
     ) {
-      if (
-        CONTAINER_INTERRUPT_LINE.test(line) &&
-        contentStart !== null &&
-        container.length
-      )
-        continue;
       indexSegment(segmentStart, start);
       segmentStart = end;
-      container = [];
+      container = projected.steps;
     }
   }
   indexSegment(segmentStart, text.length);
@@ -510,6 +555,52 @@ function inlineLiteralSpans(
 }
 
 type ContainerStep = { quote: true } | { indent: number };
+
+/** Reuse native container continuation before looking for a nested block opening. */
+function projectedContainerLine(
+  line: string,
+  active: ContainerStep[],
+  startsBlock: boolean
+): { contentStart: number; steps: ContainerStep[]; entered: boolean } {
+  const continued = containerContentStart(line, active);
+  const base = continued ?? 0;
+  const remainder = line.slice(base);
+  const nested = containerOpening(remainder);
+  const entered =
+    nested.steps.length > 0 &&
+    !THEMATIC_BREAK_LINE.test(remainder) &&
+    (startsBlock || CONTAINER_INTERRUPT_LINE.test(remainder));
+  return {
+    contentStart: base + (entered ? nested.contentStart : 0),
+    steps: entered
+      ? [...(continued === null ? [] : active), ...nested.steps]
+      : continued === null
+        ? []
+        : active,
+    entered,
+  };
+}
+
+/** Literal blocks cannot continue beyond a nonblank container dedent. */
+function containerBlockEnd(
+  text: string,
+  lines: DocumentLines,
+  index: number,
+  steps: readonly ContainerStep[],
+  lazyReference = false
+): number {
+  if (!steps.length) return text.length;
+  for (let at = index + 1; at < lines.length; at++) {
+    const line = lines.at(at);
+    const value = text.slice(line.start, line.contentEnd);
+    if (containerContentStart(value, steps) !== null) continue;
+    if (/^[\t ]*$/.test(value)) {
+      if (!lazyReference && !steps.some(step => 'quote' in step)) continue;
+    } else if (lazyReference && !isInlineCodeBoundaryLine(value)) continue;
+    return line.start;
+  }
+  return text.length;
+}
 
 /** Read quote/list steps without rewriting the original text or source offsets. */
 function containerOpening(line: string): {
@@ -627,13 +718,16 @@ function ordinaryHtmlSpan(
   text: string,
   lines: DocumentLines,
   index: number,
-  missingClosers: Map<string, number>
+  missingClosers: Map<string, number>,
+  start = lines.start(index),
+  steps: readonly ContainerStep[] = [],
+  blockEnd?: () => number
 ): LiteralSpan | null {
   const line = lines.at(index);
-  const source = text.slice(line.start, line.contentEnd);
+  const source = text.slice(start, line.contentEnd);
   const tag = /^ {0,3}<\/?([A-Za-z][A-Za-z0-9-]*)(?=[ \t/>]|$)/.exec(source);
   if (!tag) return null;
-  const tokenStart = line.start + source.indexOf('<');
+  const tokenStart = start + source.indexOf('<');
   const tokenEnd = htmlLiteralEnd(text, tokenStart, missingClosers);
   if (!HTML_BLOCK_TAGS.has(tag[1].toLowerCase())) {
     const previous = index > 0 ? lines.at(index - 1) : undefined;
@@ -646,20 +740,24 @@ function ordinaryHtmlSpan(
     )
       return null;
   }
-  const bodyStart = tokenEnd ?? line.start;
+  const limit = blockEnd?.() ?? containerBlockEnd(text, lines, index, steps);
+  const bodyStart = tokenEnd === null || tokenEnd > limit ? start : tokenEnd;
   for (
     let at = Math.max(index + 1, containingLine(lines, bodyStart));
     at < lines.length;
     at++
   ) {
     const next = lines.at(at);
+    if (next.start >= limit) return { bodyStart, bodyEnd: limit, end: limit };
+    const value = text.slice(next.start, next.contentEnd);
+    const contentStart = containerContentStart(value, steps);
     if (
       next.start >= bodyStart &&
-      /^[\t ]*$/.test(text.slice(next.start, next.contentEnd))
+      (contentStart === null || /^[\t ]*$/.test(value.slice(contentStart)))
     )
       return { bodyStart, bodyEnd: next.start, end: next.start };
   }
-  return { bodyStart, bodyEnd: text.length, end: text.length };
+  return { bodyStart, bodyEnd: limit, end: limit };
 }
 
 /**
@@ -708,6 +806,9 @@ const scanDocumentVariableMarkers = (
   let cursor = 0;
   let blockEndedAt = -1;
   let nextLine = 0;
+  let container: ContainerStep[] = [];
+  let cachedContainerEnd: number | undefined;
+  let cachedReferenceEnd: number | undefined;
   while (cursor < text.length) {
     while (nextLine < lines.length && lines.start(nextLine) < cursor)
       nextLine++;
@@ -722,15 +823,57 @@ const scanDocumentVariableMarkers = (
       const previousText = previous
         ? text.slice(previous.start, previous.contentEnd)
         : '';
+      const previousStart = containerContentStart(previousText, container);
+      const previousContent = previousText.slice(previousStart ?? 0);
       const followsBlock =
         !previous ||
-        /^[\t ]*$/.test(previousText) ||
-        ATX_HEADING_LINE.test(previousText) ||
-        THEMATIC_BREAK_LINE.test(previousText) ||
+        /^[\t ]*$/.test(previousContent) ||
+        ATX_HEADING_LINE.test(previousContent) ||
+        THEMATIC_BREAK_LINE.test(previousContent) ||
         previous.contentEnd === blockEndedAt;
-      const definitionEnd = followsBlock
-        ? referenceDefinitionEnd(text, lines, lineIndex)
-        : null;
+      const projected = projectedContainerLine(
+        text.slice(current.start, current.contentEnd),
+        container,
+        followsBlock
+      );
+      if (container !== projected.steps) {
+        cachedContainerEnd = undefined;
+        cachedReferenceEnd = undefined;
+      }
+      container = projected.steps;
+      const blockEnd = () =>
+        (cachedContainerEnd ??= containerBlockEnd(
+          text,
+          lines,
+          lineIndex,
+          container
+        ));
+      const referenceEnd = () => {
+        if (
+          cachedReferenceEnd === undefined ||
+          cachedReferenceEnd <= current.start
+        )
+          cachedReferenceEnd = containerBlockEnd(
+            text,
+            lines,
+            lineIndex,
+            container,
+            true
+          );
+        return cachedReferenceEnd;
+      };
+      const contentStart = current.start + projected.contentStart;
+      const definitionEnd =
+        followsBlock || projected.entered
+          ? referenceDefinitionEnd(
+              text,
+              lines,
+              lineIndex,
+              contentStart,
+              container,
+              referenceEnd
+            )
+          : null;
       if (definitionEnd !== null) {
         collectLiteral(cursor, definitionEnd);
         blockEndedAt = definitionEnd;
@@ -757,26 +900,43 @@ const scanDocumentVariableMarkers = (
         cursor = indentedEnd;
         continue;
       }
-      const rawHtml = rawHtmlSpan(text, cursor, missingHtmlClosers, lines);
+      const rawHtml = rawHtmlSpan(
+        text,
+        contentStart,
+        missingHtmlClosers,
+        lines,
+        blockEnd
+      );
       if (rawHtml) {
         collectLiteral(cursor, rawHtml.bodyStart);
         collectLiteral(rawHtml.bodyStart, rawHtml.bodyEnd);
+        blockEndedAt = rawHtml.end;
         cursor = rawHtml.end;
         continue;
       }
       const terminatedHtml = terminatedHtmlBlockSpan(
         text,
-        cursor,
+        contentStart,
         missingHtmlClosers,
-        lines
+        lines,
+        blockEnd
       );
       if (terminatedHtml) {
         collectLiteral(cursor, terminatedHtml.bodyStart);
         collectLiteral(terminatedHtml.bodyStart, terminatedHtml.bodyEnd);
+        blockEndedAt = terminatedHtml.end;
         cursor = terminatedHtml.end;
         continue;
       }
-      const html = ordinaryHtmlSpan(text, lines, lineIndex, missingHtmlClosers);
+      const html = ordinaryHtmlSpan(
+        text,
+        lines,
+        lineIndex,
+        missingHtmlClosers,
+        contentStart,
+        container,
+        blockEnd
+      );
       if (html) {
         collectLiteral(cursor, html.bodyStart);
         collectLiteral(html.bodyStart, html.bodyEnd);
@@ -805,9 +965,19 @@ const scanDocumentVariableMarkers = (
       continue;
     }
     const interaction = text.startsWith('?[', cursor)
-      ? readDocumentInteraction(text, cursor, index =>
-          blankLineAfter(text, index)
-        )
+      ? readDocumentInteraction(text, cursor, index => {
+          if (blankLineAfter(text, index)) return true;
+          if (text[index] !== '\n' && text[index] !== '\r') return false;
+          const next = containingLine(lines, index) + 1;
+          if (next >= lines.length) return false;
+          const line = lines.at(next);
+          const value = text.slice(line.start, line.contentEnd);
+          const projected = projectedContainerLine(value, container, false);
+          return (
+            projected.entered ||
+            isInlineCodeBoundaryLine(value.slice(projected.contentStart))
+          );
+        })
       : null;
     if (interaction) {
       collectLiteral(

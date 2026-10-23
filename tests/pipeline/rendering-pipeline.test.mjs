@@ -1475,3 +1475,84 @@ test('document extraction and the real Markdown pipeline agree at literal bounda
     }
   }
 });
+
+test('container projection keeps document metadata aligned with the rendered controls', () => {
+  const q = '?[%{{ real }} A|B]';
+  const cases = [
+    {
+      prefix: '> Text `{{ unfinished\n> # Heading ` end\n\n',
+      names: [],
+      count: 0,
+    },
+    {
+      prefix: '- Text ${{ unfinished\n  # Heading $ end\n\n',
+      names: [],
+      count: 0,
+    },
+    {
+      prefix: '2. Text `{{ unfinished\n    # Heading ` end\n\n',
+      names: [],
+      count: 0,
+    },
+    {
+      prefix: '> <div>\n> {{ unfinished\n> </div>\n\n',
+      names: ['real'],
+      count: 1,
+    },
+    {
+      prefix: '> - <script>\n>   {{ unfinished\n>   </script>\n\n',
+      names: ['real'],
+      count: 1,
+    },
+    {
+      prefix: '<script>\n</script>\n    {{ unfinished\n\n',
+      names: ['real'],
+      count: 1,
+    },
+    { prefix: '?[ unfinished\n~~~\n{{ x\n~~~\n', names: ['real'], count: 1 },
+    { prefix: '> [foo]: /url "{{ unfinished"\n\n', names: ['real'], count: 1 },
+    {
+      prefix: '> [foo]: /url\n>   "{{ unfinished"\n\n',
+      names: ['real'],
+      count: 1,
+    },
+    {
+      prefix: '> [foo]:\n> /url "{{ unfinished"\n\n',
+      names: ['real'],
+      count: 1,
+    },
+    { prefix: '> [foo]: /url\n"{{ unfinished"\n\n', names: ['real'], count: 1 },
+    { prefix: '> [foo]:\n/url "{{ unfinished"\n\n', names: ['real'], count: 1 },
+    {
+      prefix: '> Intro\n> [foo]: /url "{{ unfinished"\n\n',
+      names: [],
+      count: 0,
+    },
+    {
+      prefix: 'Text `{{ unfinished\n2. # heading\n` end\n\n',
+      names: ['real'],
+      count: 1,
+    },
+    {
+      prefix: '> Text `{{ unfinished\n> continuation ` end\n\n',
+      names: ['real'],
+      count: 1,
+    },
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const item of cases) {
+      for (const eol of ['\n', '\r\n', '\r']) {
+        const source = (item.prefix + q).replaceAll('\n', eol);
+        assert.deepEqual(extractVariableNames(source), item.names, source);
+        for (const value of [source, Buffer.from(source)]) {
+          const found = interactions(render({ value }, plugin));
+          assert.equal(found.length, item.count, source);
+          if (found.length) {
+            assert.equal(found[0].variableName, 'real', source);
+            assert.deepEqual(found[0].buttonTexts, ['A', 'B'], source);
+          }
+        }
+      }
+    }
+  }
+});

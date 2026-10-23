@@ -235,10 +235,11 @@ and returns each name once. It does not change the host's policy for which sourc
 Complete markers inside code, HTML, math, or link-resource examples are still collected, while incomplete examples stay
 inside their closing literal boundary and cannot hide a later variable. This includes fence info
 strings, quote/list-contained fences, indented code that starts a block, reference-definition
-destinations and titles, ordinary HTML blocks
-ending at a blank line, and raw `script`, `style`, `pre`, or `textarea` blocks. Physical lines use
+destinations and titles (including native container and lazy continuations), ordinary HTML blocks
+ending at a blank line or container boundary, and raw `script`, `style`, `pre`, or `textarea` blocks.
+Comments, processing instructions, declarations, and CDATA retain the whole physical closing line. Physical lines use
 LF, CRLF, or CR; other Unicode separators do not create Markdown line boundaries.
-Document interaction candidates stop at a blank line outside an opaque marker. The raw
+Document interaction candidates stop at a blank line or native paragraph interruption outside an opaque marker. The raw
 interaction reader keeps its context-free behavior.
 Markdown-escaped opening
 braces do not start a document marker. The raw readers below do not interpret Markdown context.
