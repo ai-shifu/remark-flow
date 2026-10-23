@@ -15,6 +15,10 @@ import {
   splitUnescaped,
   unescapeInteractionText,
 } from './escaping';
+import {
+  normalizeVariableName,
+  VARIABLE_ASSIGNMENT_SOURCE,
+} from './variable-name';
 
 // Interaction input type enumeration
 export enum InteractionType {
@@ -35,12 +39,9 @@ export const COMPILED_REGEXES = {
     `\\?\\[(${INTERACTION_CONTENT_SOURCE})\\](?!\\()`
   ),
 
-  // Layer 2: Variable detection - matches %{{variable}}content format
-  // (supports letters, numbers, underscores, Chinese characters, Japanese
-  // kana, with optional spaces inside the braces). Superset of both the
-  // repo history and the published 0.1.6 behavior.
-  LAYER2_VARIABLE:
-    /^%\{\{\s*([a-zA-Z0-9_\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]+)\s*\}\}(.*)$/,
+  // Names use the teaching engine's grammar; only the content after the marker is split into
+  // choices, display/value pairs or a text input. Punctuation inside the name is ordinary text.
+  LAYER2_VARIABLE: new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`),
 
   // Layer 3: Split content before and after ...
   LAYER3_ELLIPSIS: /^(.*?)\.\.\.(.*)/,
@@ -256,7 +257,7 @@ export class InteractionParser {
       return [false, null, innerContent];
     }
 
-    const variableName = match[1].trim();
+    const variableName = normalizeVariableName(match[1]);
     const remainingContent = match[2].trim();
 
     return [true, variableName, remainingContent];

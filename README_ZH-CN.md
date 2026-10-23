@@ -165,6 +165,27 @@ const result = processor.processSync(`
 ?[👍 好 | 👎 差 | 🤔 不确定]
 ```
 
+### 变量名
+
+变量名与授课引擎使用同一条 `[^{}\s]+` 规则：非空，不含空白或花括号，保留 Unicode
+以及 `?`、`？`、`:`、`/`、`|`、`...` 等标点。`{{ name }}` 中变量名两端的空白会被去掉，
+内部字符、大小写与标点不会被归一化。空白采用 Python 的定义，包含 U+0085、U+001C–001F；
+U+FEFF 会保留为变量名的一部分。交互块的现有边界保持不变：未转义的 `]` 仍会结束 `?[...]`。
+
+```markdown
+你的性别是？
+?[%{{你的性别是？}} 男 | 女 | 秘密]
+```
+
+变量名是答案的存储键，不会自动显示成题干。宿主可使用包导出的
+`normalizeVariableName`、`isValidVariableName`、`createVariableExpressionRegex`、
+`extractVariableNames` 与 `VARIABLE_NAME_SOURCE`、`VARIABLE_REFERENCE_SOURCE`、
+`VARIABLE_ASSIGNMENT_SOURCE`，避免各自维护不同的变量正则。
+
+`extractVariableNames(text)` 按源码出现顺序去重提取 `{{变量名}}`（包括 `%{{变量名}}`）；
+它保留现有全文扫描范围，不排除代码块或注释。`createVariableExpressionRegex('gu')`
+返回独立正则，第一捕获组是去掉两端空白后的变量名。
+
 ## 📖 API 参考
 
 ### 插件导出

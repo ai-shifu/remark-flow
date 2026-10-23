@@ -175,6 +175,42 @@ The first separator type encountered determines the parsing mode:
 ?[👍 Good | 👎 Bad | 🤔 Unsure]
 ```
 
+### Variable names
+
+Variable names follow the teaching engine's `[^{}\s]+` rule: they are nonempty and contain no
+whitespace or braces. Unicode and punctuation such as `?`, `？`, `:`, `/`, `|`, and `...` are
+preserved. Padding inside `{{ name }}` is trimmed; case and punctuation are not normalized.
+Whitespace follows Python's definition, including U+0085 and U+001C–001F; U+FEFF stays in the key.
+The existing interaction boundary still applies: an unescaped `]` ends `?[...]`.
+
+```markdown
+你的性别是？
+?[%{{你的性别是？}} 男 | 女 | 秘密]
+```
+
+The variable name is the answer's storage key; it does not add a visible question heading.
+Hosts can reuse the same grammar instead of maintaining their own identifier regex:
+
+```typescript
+import {
+  createVariableExpressionRegex,
+  extractVariableNames,
+  isValidVariableName,
+  normalizeVariableName,
+  VARIABLE_NAME_SOURCE,
+  VARIABLE_REFERENCE_SOURCE,
+  VARIABLE_ASSIGNMENT_SOURCE,
+} from 'remark-flow';
+
+extractVariableNames('%{{你的性别是？}} {{你的性别是？}}'); // ['你的性别是？']
+normalizeVariableName(' 你的性别是？ '); // '你的性别是？'
+isValidVariableName('has space'); // false
+createVariableExpressionRegex('gu'); // A fresh matcher; capture 1 is the trimmed name.
+```
+
+`extractVariableNames` scans the supplied source in order, including code fences and comments,
+and returns each name once. It does not change the host's policy for which source to inspect.
+
 ## 📖 API Reference
 
 ### Plugin Exports

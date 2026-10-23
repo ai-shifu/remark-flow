@@ -22,6 +22,7 @@ const require = createRequire(import.meta.url);
 const {
   remarkFlow,
   remarkInteraction,
+  remarkCustomVariable,
   escapeInteractionText,
   InteractionParser,
 } = require('../../dist/index.js');
@@ -267,4 +268,51 @@ test('an interaction that does not parse is left as its text, with no node of it
   walk(tree);
   assert.ok(!types.includes('flowInteraction'), JSON.stringify(types));
   assert.ok(JSON.stringify(tree).includes('?[%{bad} A | B]'));
+});
+
+test('question keys and existing engine names survive the actual Markdown pipeline', () => {
+  const names = [
+    'gender_1',
+    '你的性别是',
+    '你的性别是?',
+    '你的性别是？',
+    '问题:答案：',
+    'question/answer',
+    'a-b.c',
+    'a|b',
+    'a...b',
+    'a//b',
+    'café',
+    'آپ؟',
+    '🙂',
+    '\ufeffname',
+    'name\ufeff',
+    'a\ufeffb',
+    '\ufeff',
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const name of names) {
+      const got = only(`?[%{{ ${name} }} 男 | 女 | 秘密]`, plugin);
+      assert.deepEqual(got, {
+        variableName: name,
+        buttonTexts: ['男', '女', '秘密'],
+        buttonValues: ['男', '女', '秘密'],
+        isMultiSelect: false,
+      });
+    }
+  }
+});
+
+test('Python-only marker whitespace is trimmed without consuming U+FEFF from the key', () => {
+  const got = only(
+    '?[%{{\u0085\u001c\u001d\u001e\u001f\ufeff问题？\ufeff\u0085}} 男 | 女]'
+  );
+  assert.equal(got.variableName, '\ufeff问题？\ufeff');
+  assert.deepEqual(got.buttonTexts, ['男', '女']);
+});
+
+test('question keys do not change the existing interaction bracket boundary', () => {
+  const got = only('?[%{{a]b}} 男 | 女]');
+  assert.equal(got.variableName, undefined);
+  assert.deepEqual(got.buttonTexts, ['%{{a']);
 });

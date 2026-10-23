@@ -296,11 +296,15 @@ This project implements a **layered parsing architecture** with strict syntax ru
 #### Layer 2: Variable Detection
 
 ```regex
-/^%\{\{\s*([a-zA-Z_\u4e00-\u9fa5][a-zA-Z0-9_\u4e00-\u9fa5]*)\s*\}\}(.*)$/
+/^%\{\{\s*([^{}\s]+)\s*\}\}(.*)$/
 ```
 
-- **Variable names support**: Letters, numbers, underscores, Chinese characters
-- **Example**: `%{{username}}`, `%{{用户名}}`, `%{{user_id_123}}`
+- **Variable names support**: Any nonempty sequence without whitespace or braces, matching the
+  teaching engine. Reuse `src/variable-name.ts` and its public helpers instead of copying a regex.
+- Whitespace means Python's set, not JavaScript's `\s` or `String.trim()`; the shared helpers
+  exclude U+0085 and U+001C–001F from names and preserve U+FEFF as part of a name.
+- **Example**: `%{{username}}`, `%{{用户名}}`, `%{{你的性别是？}}`
+- The existing `?[...]` closing-bracket boundary still applies; do not extend it in a name fix.
 
 #### Layer 3: Content Parsing Patterns
 
@@ -379,8 +383,8 @@ This project implements a **layered parsing architecture** with strict syntax ru
    - Whitespace trimmed from both display and value
 
 3. **Variable Name Rules**
-   - Must start with letter, underscore, or Chinese character
-   - Can contain letters, numbers, underscores, Chinese characters
+   - Must be nonempty after trimming surrounding marker whitespace
+   - Cannot contain whitespace or braces; preserve Unicode and punctuation as written
    - Case sensitive: `%{{userName}}` ≠ `%{{username}}`
 
 4. **Unicode Support**
@@ -494,8 +498,8 @@ function badParseFunction(content: string) {
 3. **Invalid Variable Names**
 
    ```typescript
-   // Input: '?[%{{123invalid}}...]'
-   // Output: { placeholder: '%{{123invalid}}...' }
+   // Input: '?[%{{has space}}...]'
+   // Output: Non-assignment fallback; no variableName
    // MUST NOT: Attempt to process as variable
    ```
 
@@ -880,9 +884,7 @@ console.log(
 );
 console.log(
   'Variable pattern match:',
-  /^%\{\{\s*([a-zA-Z_\u4e00-\u9fa5][a-zA-Z0-9_\u4e00-\u9fa5]*)\s*\}\}(.*)$/.exec(
-    '%{{test}} content'
-  )
+  /^%\{\{\s*([^{}\s]+)\s*\}\}(.*)$/.exec('%{{test}} content')
 );
 ```
 
