@@ -23,6 +23,8 @@
  * into micromark's packages, which this one does not depend on at runtime.
  */
 
+import { isInlineCodeBoundaryLine } from './variable-name';
+
 /** A character code as micromark passes it: a code point, a virtual line ending, or null at EOF. */
 type Code = number | null;
 
@@ -40,6 +42,7 @@ interface Construct {
   name?: string;
   partial?: boolean;
   concrete?: boolean;
+  previous?: (this: FlowContext, code: Code) => boolean;
   tokenize: (
     this: FlowContext,
     effects: Effects,
@@ -51,6 +54,7 @@ interface Construct {
 interface FlowContext {
   interrupt?: boolean;
   currentConstruct: Construct;
+  now(): { offset: number };
   parser: {
     constructs: {
       flow: Record<string, Construct[]>;
@@ -137,6 +141,37 @@ const REPLACEMENT_CHARACTER = 0xfffd;
 const CARRIAGE_RETURN_LINE_FEED = -3;
 const HORIZONTAL_TAB = -2;
 const VIRTUAL_SPACE = -1;
+const literalCodeOpenings = new WeakMap<object, Set<number>>();
+
+function previousLiteralCodeOpening(this: FlowContext, code: Code): boolean {
+  const native = this.parser.constructs.text[BACKTICK]?.find(
+    construct => construct.name === 'codeText'
+  );
+  return native?.previous?.call(this, code) ?? true;
+}
+
+/** A rejected opening cannot pair with a tick exposed only by opaque-marker flow protection. */
+function tokenizeLiteralCodeOpening(
+  this: FlowContext,
+  effects: Effects,
+  ok: State,
+  nok: State
+): State {
+  if (!literalCodeOpenings.get(this.parser)?.has(this.now().offset)) return nok;
+  return start;
+  function start(code: Code): State | undefined {
+    effects.enter('data');
+    return run(code);
+  }
+  function run(code: Code): State | undefined {
+    if (code === BACKTICK) {
+      effects.consume(code);
+      return run;
+    }
+    effects.exit('data');
+    return ok(code);
+  }
+}
 
 /** Preserve NUL provenance before a serialized token loses the distinction from literal U+FFFD. */
 function preserveTokenNulls(context: TokenizeContext, token: Token): void {
@@ -402,6 +437,9 @@ function tokenizeOpaqueBlock(
   let headingDepth = 0;
   let checkedSize = 0;
   let codeOpeningSize = 0;
+  let codeOpeningOffset = 0;
+  let codeOpeningCrossedBoundary = false;
+  const rejectedCodeOpenings = new Set<number>();
   let chunk: Token;
   let outer: Token;
   const outerType = heading ? OPAQUE_HEADING : 'content';
@@ -490,6 +528,8 @@ function tokenizeOpaqueBlock(
       if (!interaction && code === BACKTICK) {
         checkedSize = 0;
         codeOpeningSize = 0;
+        codeOpeningOffset = context.now().offset;
+        codeOpeningCrossedBoundary = false;
         return effects.check(
           { partial: true, tokenize: codeSpan },
           skipChecked,
@@ -579,7 +619,7 @@ function tokenizeOpaqueBlock(
       if (code === null) return no(code);
       if (isLineEnding(code)) {
         if (probe) return no(code);
-        return check.check(continuationConstruct, line, no)(code);
+        return check.check(continuationConstruct, line, blockedLine)(code);
       }
       if (code === BACKTICK) {
         closing = 0;
@@ -591,6 +631,38 @@ function tokenizeOpaqueBlock(
     function line(code: Code): State | undefined {
       consume(code);
       return body;
+    }
+    function blockedLine(code: Code): State | undefined {
+      return check.check(
+        { partial: true, tokenize: inlineBoundary },
+        boundary,
+        no
+      )(code);
+    }
+    function boundary(code: Code): State | undefined {
+      codeOpeningCrossedBoundary = true;
+      return no(code);
+    }
+    function inlineBoundary(probe: Effects, yes: State, no: State): State {
+      let line = '';
+      return start;
+      function start(code: Code): State | undefined {
+        probe.consume(code);
+        return content;
+      }
+      function content(code: Code): State | undefined {
+        if (code === null || isLineEnding(code)) {
+          return isInlineCodeBoundaryLine(line) ? yes(code) : no(code);
+        }
+        line +=
+          code === HORIZONTAL_TAB
+            ? '\t'
+            : code === VIRTUAL_SPACE
+              ? ' '
+              : String.fromCodePoint(code);
+        probe.consume(code);
+        return content;
+      }
     }
     function close(code: Code): State | undefined {
       if (code === BACKTICK) {
@@ -675,6 +747,8 @@ function tokenizeOpaqueBlock(
   }
 
   function skipCodeOpening(code: Code): State | undefined {
+    if (!probe && codeOpeningCrossedBoundary)
+      rejectedCodeOpenings.add(codeOpeningOffset);
     checkedSize = codeOpeningSize;
     return skipChecked(code);
   }
@@ -725,6 +799,7 @@ function tokenizeOpaqueBlock(
       return headingEndTail;
     }
     effects.exit(MARKER);
+    retainLiteralCodeOpenings();
     effects.exit(outerType);
     return ok(code);
   }
@@ -747,8 +822,19 @@ function tokenizeOpaqueBlock(
   }
 
   function closeOuter(): void {
+    retainLiteralCodeOpenings();
     if (!heading) effects.exit('paragraph');
     effects.exit(outerType);
+  }
+
+  function retainLiteralCodeOpenings(): void {
+    if (probe || !rejectedCodeOpenings.size) return;
+    let openings = literalCodeOpenings.get(context.parser);
+    if (!openings) {
+      openings = new Set<number>();
+      literalCodeOpenings.set(context.parser, openings);
+    }
+    for (const opening of rejectedCodeOpenings) openings.add(opening);
   }
 
   function finish(code: Code): State | undefined {
@@ -813,6 +899,11 @@ export function interactionSyntax(): Record<string, unknown> {
       },
     },
     text: {
+      [BACKTICK]: {
+        name: 'flowLiteralCodeOpening',
+        previous: previousLiteralCodeOpening,
+        tokenize: tokenizeLiteralCodeOpening,
+      },
       [QUESTION_MARK]: {
         name: 'flowInteraction',
         tokenize: tokenizeInteraction,

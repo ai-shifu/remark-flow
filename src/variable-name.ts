@@ -134,6 +134,12 @@ interface LiteralSpan {
 }
 
 const HTML_SPACE = /[\t\n\f\r ]/;
+const INLINE_CODE_BREAK_LINE =
+  /^[ \t]*\r?$|^ {0,3}(?:`{3,}[^`\r\n]*|~{3,}[^\r\n]*)\r?$/;
+
+/** @internal Shared document/flow boundary for an unfinished inline code span. */
+export const isInlineCodeBoundaryLine = (line: string): boolean =>
+  INLINE_CODE_BREAK_LINE.test(line);
 
 /** Read a complete HTML token, using CommonMark's tag and attribute name shapes. */
 function htmlLiteralEnd(text: string, start: number): number | null {
@@ -190,8 +196,63 @@ function htmlLiteralEnd(text: string, start: number): number | null {
   }
 }
 
+/** Index same-width inline code closers without pairing across a paragraph or fence. */
+function inlineCodeSpans(text: string): Map<number, LiteralSpan> {
+  const spans = new Map<number, LiteralSpan>();
+  let segmentStart = 0;
+  let lineStart = 0;
+  for (;;) {
+    const newline = text.indexOf('\n', lineStart);
+    const lineEnd = newline < 0 ? text.length : newline;
+    const line = text.slice(lineStart, lineEnd);
+    if (isInlineCodeBoundaryLine(line)) {
+      indexSegment(segmentStart, lineStart);
+      segmentStart = newline < 0 ? text.length : newline + 1;
+    }
+    if (newline < 0) break;
+    lineStart = newline + 1;
+  }
+  indexSegment(segmentStart, text.length);
+  return spans;
+
+  function indexSegment(start: number, end: number): void {
+    const runs = [...text.slice(start, end).matchAll(/`+/g)];
+    const next = new Map<number, number>();
+    for (let index = runs.length - 1; index >= 0; index--) {
+      const run = runs[index];
+      const opening = start + (run.index ?? 0);
+      const size = run[0].length;
+      const closing = next.get(size);
+      if (closing !== undefined) {
+        spans.set(opening, {
+          bodyStart: opening + size,
+          bodyEnd: closing,
+          end: closing + size,
+        });
+      }
+      // Outside code, a backslash may escape the first tick of a run. Its suffix
+      // can open a shorter span, while an existing code span still sees the full run.
+      let slashes = 0;
+      for (let at = opening - 1; at >= 0 && text[at] === '\\'; at--) slashes++;
+      const suffixClosing = next.get(size - 1);
+      if (slashes % 2 && size > 1 && suffixClosing !== undefined) {
+        spans.set(opening + 1, {
+          bodyStart: opening + size,
+          bodyEnd: suffixClosing,
+          end: suffixClosing + size - 1,
+        });
+      }
+      next.set(size, opening);
+    }
+  }
+}
+
 /** Complete code spans are bounded even if their example marker never closes. */
-function codeLiteralSpan(text: string, start: number): LiteralSpan | null {
+function codeLiteralSpan(
+  text: string,
+  start: number,
+  inlineSpans: ReadonlyMap<number, LiteralSpan>
+): LiteralSpan | null {
   const character = text[start];
   let openingEnd = start;
   while (text[openingEnd] === character) openingEnd++;
@@ -222,17 +283,7 @@ function codeLiteralSpan(text: string, start: number): LiteralSpan | null {
       return { bodyStart, bodyEnd: text.length, end: text.length };
     }
   }
-  if (character !== '`') return null;
-  let cursor = openingEnd;
-  for (;;) {
-    const close = text.indexOf('`', cursor);
-    if (close < 0) return null;
-    cursor = close;
-    while (text[cursor] === '`') cursor++;
-    if (cursor - close === size) {
-      return { bodyStart: openingEnd, bodyEnd: close, end: cursor };
-    }
-  }
+  return character === '`' ? (inlineSpans.get(start) ?? null) : null;
 }
 
 /**
@@ -243,6 +294,7 @@ function codeLiteralSpan(text: string, start: number): LiteralSpan | null {
  */
 export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
   const markers: VariableMarker[] = [];
+  const inlineSpans = inlineCodeSpans(text);
   const collectLiteral = (start: number, end: number) => {
     const literal = text.slice(start, end);
     let cursor = 0;
@@ -290,7 +342,7 @@ export const findDocumentVariableMarkers = (text: string): VariableMarker[] => {
       continue;
     }
     if (text[cursor] === '`' || text[cursor] === '~') {
-      const span = codeLiteralSpan(text, cursor);
+      const span = codeLiteralSpan(text, cursor, inlineSpans);
       if (span) {
         collectLiteral(span.bodyStart, span.bodyEnd);
         cursor = span.end;

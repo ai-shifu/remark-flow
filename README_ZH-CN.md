@@ -204,6 +204,8 @@ U+2028、U+2029，也不能包含标记结束符 `}}`。
 `{ start, end, rawName, name }`，非法内容的 `name` 为 `null`。
 `trimVariablePadding` 使用线性扫描实现相同的两端空白处理，保留 U+FEFF 和内部长空格。
 验证完整标记时应将正则 source 锚定；扫描 Markdown 全文统一使用 document reader，避免在非法内容内部重启匹配。
+行内代码的起止符不会跨空白段落或代码围栏行配对；未配对起始符之后出现的真实变量标记，
+仍会整体占据到第一个字面 `}}`。
 
 `formatVariableReference(name)` 和 `formatVariableAssignment(name)` 返回带两端空格的标记，
 非法名称返回 `null`。例如 `question}` 应写成 `{{ question} }}`；直接拼成 `{{question}}}`

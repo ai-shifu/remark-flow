@@ -185,6 +185,29 @@ describe('the shared variable-name grammar', () => {
     expect(findVariableMarkers(String.raw`\{{ kept }}`)[0].name).toBe('kept');
   });
 
+  test.each(
+    ['`', '``'].flatMap(ticks =>
+      [
+        '\n\n',
+        '\n \t\n',
+        '\r\n\r\n',
+        '\n```text\nexample\n```\n',
+        '\n~~~\nexample\n~~~\n',
+      ].map(boundary => ({ ticks, boundary }))
+    )
+  )(
+    'does not pair $ticks across a paragraph or fence: $boundary',
+    ({ ticks, boundary }) => {
+      const source = `Show ${ticks}{{${boundary}${ticks} then ?[%{{ q }} A|B]`;
+      const marker = readVariableMarker(source, source.indexOf('{{'));
+      expect(marker).not.toBeNull();
+      expect(findDocumentVariableMarkers(source)).toEqual([marker]);
+      expect(extractVariableNames(source)).toEqual(
+        marker?.name === null ? [] : [marker?.name]
+      );
+    }
+  );
+
   test('keeps literal-local ranges in the original source and does not deduplicate them', () => {
     const source = '🙂 `%{{ q }}` <span title="%{{ q }}"> {{ q }}';
     const ranges = findDocumentVariableMarkers(source);
@@ -211,6 +234,14 @@ describe('the shared variable-name grammar', () => {
     expect(htmlMarkers[0].end).toBe(html.indexOf('>') + 1);
     expect(htmlMarkers[0].name).toBeNull();
     expect(htmlMarkers[1].name).toBe('outside');
+  });
+
+  test('keeps a code opening after an escaped first tick in the same run', () => {
+    for (const width of [2, 3, 4]) {
+      const ticks = '`'.repeat(width);
+      const source = `Show \\${ticks}{{${ticks.slice(1)} then ?[%{{ q }} A|B]`;
+      expect(extractVariableNames(source)).toEqual(['q']);
+    }
   });
 
   test('does not share matcher state or normalize punctuation and case', () => {

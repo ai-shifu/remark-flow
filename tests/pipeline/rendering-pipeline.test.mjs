@@ -869,6 +869,10 @@ test('code spans and escaped braces do not claim a following real code fence', (
 
 test('HTML-looking link titles do not extend lookahead into a later Markdown block', () => {
   const sources = [
+    '``',
+    'Inline ``unclosed',
+    'Inline ```unclosed',
+    'Intro```mermaid\ngraph TD\nA --> B\n```Outro',
     '[`code`](url "<!-- <figure></figure>")\n\n<!-- actual -->',
     '[docs][ref]\n\n[ref]: https://example.com "<!-- <figure></figure>"\n\n<figure>Actual</figure>',
     '[docs](url "<!-- example")\n\n\u0060\u0060\u0060html\n<!-- actual -->\n\u0060\u0060\u0060',
@@ -887,6 +891,82 @@ test('HTML-looking link titles do not extend lookahead into a later Markdown blo
       remarkCustomVariable,
     ]) {
       assert.deepEqual(render(source, plugin).children, expected, source);
+    }
+  }
+});
+
+test('unmatched code openings cannot pair across a paragraph or fence through an opaque marker', () => {
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const ticks of ['`', '``']) {
+      for (const boundary of [
+        '\n\n',
+        '\n \t\n',
+        '\r\n\r\n',
+        '\n```text\nexample\n```\n',
+        '\n~~~\nexample\n~~~\n',
+      ]) {
+        const original = `🙂 Show ${ticks}{{${boundary}${ticks} then ?[%{{ q }} A|B]`;
+        const marker = original.slice(
+          original.indexOf('{{') + 2,
+          original.indexOf('}}')
+        );
+        assert.deepEqual(
+          extractVariableNames(original),
+          boundary.includes('example') ? [] : [`${ticks} then ?[%{{ q`],
+          original
+        );
+        for (const wrap of containers) {
+          const source = wrap(original);
+          for (const value of [
+            source,
+            Buffer.from(source),
+            new TextEncoder().encode(source),
+          ]) {
+            const tree = render({ value }, plugin);
+            assert.equal(interactions(tree).length, 0, source);
+            const types = [];
+            const walk = node => {
+              types.push(node.type);
+              (node.children ?? []).forEach(walk);
+            };
+            walk(tree);
+            assert.ok(!types.includes('inlineCode'), source);
+          }
+        }
+        assert.ok(marker.includes('?[%{{ q'), original);
+      }
+    }
+    // A valid code span still owns its braces, and parser state never leaks to another document.
+    const healthy = '🙂 Show `{{\nordinary` then ?[%{{\nq\n}} A|B]';
+    const healthyTree = render(healthy, plugin);
+    assert.equal(interactions(healthyTree)[0].variableName, 'q');
+    assert.ok(JSON.stringify(healthyTree).includes('"type":"inlineCode"'));
+    const processor = unified().use(remarkParse).use(plugin);
+    const bad = 'Show `{{\n\n` then ?[%{{ q }} A|B]';
+    processor.runSync(processor.parse(bad), bad);
+    const good = 'Show `{{` then ?[%{{ q }} A|B]';
+    assert.equal(
+      interactions(processor.runSync(processor.parse(good), good)).length,
+      1
+    );
+    for (const width of [2, 3, 4]) {
+      const ticks = '`'.repeat(width);
+      const source = `Show \\${ticks}{{${ticks.slice(1)} then ?[%{{ q }} A|B]`;
+      assert.deepEqual(extractVariableNames(source), ['q'], source);
+      assert.equal(interactions(render(source, plugin)).length, 1, source);
     }
   }
 });

@@ -245,6 +245,8 @@ also claims invalid outer markers so their contents cannot become nested variabl
 Use `trimVariablePadding` for the shared linear-time edge trim; it preserves U+FEFF and long
 internal whitespace runs. Anchor regex sources when validating a complete token; Markdown document
 scanning uses the document reader rather than restarting a regex inside malformed input.
+Inline code openings cannot pair across a blank paragraph or a code-fence line. If a real marker
+starts after an unmatched opening, its body still stays opaque through the first literal `}}`.
 
 The formatters return `null` for invalid names and always add padding. That padding is needed
 when a name ends with a single `}`: `{{ question} }}` preserves `question}`, whereas
