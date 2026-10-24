@@ -79,7 +79,8 @@ jobs:
         env:
           COMMONMARK_VERSION: ${{ matrix.commonmark }}
         run: |
-          npm install --no-save --ignore-scripts "micromark-core-commonmark@$COMMONMARK_VERSION"
+          npm install --package-lock-only --save-exact --ignore-scripts "micromark-core-commonmark@$COMMONMARK_VERSION"
+          npm ci --ignore-scripts
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
           import { readFileSync } from 'node:fs';
