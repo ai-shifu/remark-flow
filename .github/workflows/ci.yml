@@ -51,4 +51,6 @@ jobs:
       # cannot load remark (ESM-only), and hand-built trees never showed what Markdown does to an
       # interaction before the plugin runs.
       - name: Rendering pipeline tests
-        run: node --test tests/pipeline/rendering-pipeline.test.mjs
+        run: |
+          node --test tests/pipeline/rendering-pipeline.test.mjs
+          node --conditions=development --test tests/pipeline/rendering-pipeline.test.mjs

@@ -186,8 +186,8 @@ describe('syntax pattern group', () => {
   });
 
   test('handles unicode content', () => {
-    const input = '选择: ?[%{{主题}} 浅色//light | 深色//dark]';
-    // Test Chinese variable names and content
+    const input = 'Choose: ?[%{{café theme}} Light//light | Dark//dark]';
+    // Test Unicode variable names and content
   });
 
   test('gracefully handles malformed syntax', () => {
@@ -239,11 +239,11 @@ const TEST_CASES = {
   multiCombined: '?[%{{tags}} React||Vue||Angular||...Other framework]',
 
   // Unicode and i18n
-  chinese: '?[%{{用户名}}...请输入姓名]',
-  chineseMulti: '?[%{{技能}} 前端||后端||全栈]',
+  accented: '?[%{{café preference}}...How do you like your coffee?]',
+  accentedMulti: '?[%{{résumé skills}} Frontend||Backend||Full stack]',
   emoji: '?[👍 Good | 👎 Bad | 🤔 Unsure]',
   emojiMulti: '?[😊 Happy||😢 Sad||😡 Angry]',
-  mixed: '?[%{{语言}} English//en | 中文//zh | 日本语//ja]',
+  mixed: '?[%{{language 🌍}} English//en | Spanish//es | French//fr]',
 
   // Separator priority tests
   singleFirst: '?[%{{opt}} A | B||C]', // Single-select: ["A", "B||C"]
@@ -285,8 +285,12 @@ This project implements a **layered parsing architecture** with strict syntax ru
 
 #### Layer 1: Basic Format Validation
 
-```regex
-/\?\[([^\]]*)\](?!\()/
+```typescript
+import { INTERACTION_CONTENT_SOURCE } from './src/escaping';
+
+const interactionPattern = new RegExp(
+  `\\?\\[(${INTERACTION_CONTENT_SOURCE})\\](?!\\()`
+);
 ```
 
 - **Valid**: `?[content]`
@@ -295,12 +299,29 @@ This project implements a **layered parsing architecture** with strict syntax ru
 
 #### Layer 2: Variable Detection
 
-```regex
-/^%\{\{\s*([a-zA-Z_\u4e00-\u9fa5][a-zA-Z0-9_\u4e00-\u9fa5]*)\s*\}\}(.*)$/
+```typescript
+import { VARIABLE_ASSIGNMENT_SOURCE } from './src/variable-name';
+
+const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
 ```
 
-- **Variable names support**: Letters, numbers, underscores, Chinese characters
-- **Example**: `%{{username}}`, `%{{用户名}}`, `%{{user_id_123}}`
+- **Variable names support**: Nonempty opaque Unicode text after trimming the established Python
+  padding set; internal ordinary spaces, punctuation, emoji and single braces are allowed.
+  Unicode Cc controls, U+2028, U+2029 and the literal terminator `}}` are forbidden inside names.
+- Reuse `src/variable-name.ts`. Markdown document scanning must use
+  `findDocumentVariableMarkers` for source ranges, or `extractVariableNames` for unique names.
+  They preserve code, HTML, math and link-resource literal boundaries and Markdown-escaped openings. Use
+  `findVariableMarkers` only for raw token scanning: each marker is claimed once through its
+  first literal `}}`, including invalid bodies and inner `{{`, without document context.
+- Padding means Python's set, not JavaScript's `\s` or `String.trim()`; U+FEFF remains in keys.
+- **Example**: `%{{username}}`, `%{{café preference}}`, `%{{What is your gender?}}`
+- Every `{{...}}` / `%{{...}}` is opaque to the interaction's `]`, option delimiters and
+  Markdown, including incomplete markers whose remaining tail stays literal. Only a leading
+  `%{{...}}` after Python whitespace padding assigns a variable; body markers retain raw source.
+- Use `trimVariablePadding` for the shared linear-time edge trim. Do not introduce regex suffix
+  trimming that repeatedly scans long internal whitespace runs, or use JS `String.trim()`.
+- Use the formatters' padding to preserve names ending with one `}`; do not add decoding or
+  special handling for backslashes, quotes, case or Unicode normalization.
 
 #### Layer 3: Content Parsing Patterns
 
@@ -315,7 +336,7 @@ This project implements a **layered parsing architecture** with strict syntax ru
 
    ```markdown
    ?[Save Changes//save-action] # Display "Save Changes", value "save-action"
-   ?[确定//confirm | 取消//cancel] # Unicode support
+   ?[Confirm 👍//confirm | Cancel 👎//cancel] # Unicode support
    ```
 
 3. **Variable Text Input**
@@ -379,13 +400,14 @@ This project implements a **layered parsing architecture** with strict syntax ru
    - Whitespace trimmed from both display and value
 
 3. **Variable Name Rules**
-   - Must start with letter, underscore, or Chinese character
-   - Can contain letters, numbers, underscores, Chinese characters
+   - Must be nonempty after trimming surrounding marker whitespace
+   - May contain ordinary spaces and single braces; preserve all internal characters as written
+   - Cannot contain Unicode Cc controls, U+2028, U+2029 or the literal terminator `}}`
    - Case sensitive: `%{{userName}}` ≠ `%{{username}}`
 
 4. **Unicode Support**
    - Full Unicode support in all text fields
-   - Chinese variable names: `%{{用户名}}`
+   - Unicode variable names: `%{{café preference}}`
    - Emoji support: `?[👍 Good | 👎 Bad]`
 
 ### Plugin Implementation Standards
@@ -494,8 +516,8 @@ function badParseFunction(content: string) {
 3. **Invalid Variable Names**
 
    ```typescript
-   // Input: '?[%{{123invalid}}...]'
-   // Output: { placeholder: '%{{123invalid}}...' }
+   // Input: '?[%{{line\nbreak}}...]'
+   // Output: Invalid assignment kept as text; no variableName
    // MUST NOT: Attempt to process as variable
    ```
 
@@ -521,8 +543,8 @@ function badParseFunction(content: string) {
 ```typescript
 // ✅ EFFICIENT: Reuse compiled regex patterns
 const COMPILED_PATTERNS = {
-  interaction: /\?\[([^\]]*)\]/g,
-  variable: /%\{\{([^}]+)\}\}/,
+  interaction: new RegExp(`\\?\\[(${INTERACTION_CONTENT_SOURCE})\\]`, 'g'),
+  variable: new RegExp(VARIABLE_ASSIGNMENT_SOURCE),
   // Pre-compile all patterns at module level
 };
 
@@ -600,8 +622,8 @@ describe('remark-flow plugin', () => {
   });
 
   test('handles unicode characters correctly', () => {
-    const input = '选择: ?[确定//confirm | 取消//cancel]';
-    // Test Chinese text handling
+    const input = 'Choose: ?[Confirm 👍//confirm | Cancel 👎//cancel]';
+    // Test Unicode text handling
   });
 
   test('gracefully handles malformed syntax', () => {
@@ -721,19 +743,25 @@ visit(tree, 'text', processVariables); // Second traversal
 
 ```typescript
 // Efficient regex patterns
-const INTERACTION_PATTERN = /\?\[([^\]]+)\]/g;
-const VARIABLE_PATTERN = /%\{\{([^}]+)\}\}/;
+const INTERACTION_PATTERN = new RegExp(
+  `\\?\\[(${INTERACTION_CONTENT_SOURCE})\\]`,
+  'g'
+);
+const VARIABLE_PATTERN = new RegExp(VARIABLE_ASSIGNMENT_SOURCE);
 
 // Cache compiled patterns
 const patterns = {
-  interaction: /\?\[([^\]]+)\]/g,
-  variable: /%\{\{([^}]+)\}\}/,
+  interaction: INTERACTION_PATTERN,
+  variable: VARIABLE_PATTERN,
   separator: /\s*\|\s*/,
   customValue: /^([^/]+)\/\/([^/]+)$/,
 };
 ```
 
 ## API Documentation Standards
+
+Keep English documentation and its examples in English. Dedicated translations and multilingual
+regression fixtures are maintained separately.
 
 ### Type Definitions
 
@@ -861,6 +889,9 @@ node -e "const r=require('remark');const p=require('./dist/index.js').default;co
 #### Parser-Specific Debugging
 
 ```typescript
+import { VARIABLE_ASSIGNMENT_SOURCE } from './src/variable-name';
+import { INTERACTION_CONTENT_SOURCE } from './src/escaping';
+
 // Enable debug mode in interaction parser
 const parser = createInteractionParser();
 const result = parser.parse('?[test content]');
@@ -876,13 +907,11 @@ console.log('Layer 3 parsing result:', result);
 // Test specific regex patterns
 console.log(
   'Interaction pattern match:',
-  /\?\[([^\]]*)\](?!\()/.exec('?[test]')
+  new RegExp(`\\?\\[(${INTERACTION_CONTENT_SOURCE})\\](?!\\()`).exec('?[test]')
 );
 console.log(
   'Variable pattern match:',
-  /^%\{\{\s*([a-zA-Z_\u4e00-\u9fa5][a-zA-Z0-9_\u4e00-\u9fa5]*)\s*\}\}(.*)$/.exec(
-    '%{{test}} content'
-  )
+  new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`).exec('%{{test}} content')
 );
 ```
 

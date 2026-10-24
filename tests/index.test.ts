@@ -2,10 +2,16 @@ import {
   remarkCustomVariable,
   remarkFlow,
   remarkInteraction,
+  findDocumentVariableMarkers,
+  type VariableMarker,
 } from '../src/index';
 import defaultExport from '../src/index';
 
 describe('index exports', () => {
+  test('exports a typed document marker reader', () => {
+    const markers: VariableMarker[] = findDocumentVariableMarkers('{{ q }}');
+    expect(markers[0]).toEqual({ start: 0, end: 7, rawName: ' q ', name: 'q' });
+  });
   test('should export remarkCustomVariable', () => {
     expect(typeof remarkCustomVariable).toBe('function');
   });

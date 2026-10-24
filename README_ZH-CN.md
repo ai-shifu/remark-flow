@@ -165,6 +165,70 @@ const result = processor.processSync(`
 ?[👍 好 | 👎 差 | 🤔 不确定]
 ```
 
+### 变量名
+
+变量名是两端去掉原有 Python 空白集合后的非空 Unicode 原文。内部普通空格、标点、emoji、
+单个花括号、`[`、`]`、`|`、`//` 和 `...` 都会完整保留；内部不得包含 Unicode Cc 控制字符、
+U+2028、U+2029，也不能包含标记结束符 `}}`。
+
+第一个字面 `}}` 结束标记；反斜杠和引号都是普通字符，不增加转义或解码规则，不合并内部空格，
+不做大小写或 Unicode 归一化。任何位置的 `{{...}}` / `%{{...}}` 都会先被整体读取，其中的 `]`、
+选项分隔符和 Markdown 符号不会截断标记。只有去掉 Python 前置空白后位于开头的 `%{{...}}`
+负责赋值，选项中的标记保留原文；未闭合标记占据余下文本，不会从内部创造交互按钮。
+两端空白集合包含 U+0085、U+001C–001F，U+FEFF 保留为键的一部分。
+
+`escapeInteractionText(text)` 转义变量标记之外的交互运算符，并原样保留标记源码。
+它不会闭合或转义未配对的 `{{`；该序列仍占据余下文本，因此不能用此函数将含有它的
+任意文本直接嵌入为字面选项。本次不增加额外的花括号转义语法。
+
+```markdown
+你的性别是？
+?[%{{你的性别是？}} 男 | 女 | 秘密]
+```
+
+变量名是答案的存储键，不会自动显示成题干。宿主可使用包导出的
+`normalizeVariableName`、`isValidVariableName`、`createVariableExpressionRegex`、
+`extractVariableNames`、`findDocumentVariableMarkers` 与 `VARIABLE_NAME_SOURCE`、`VARIABLE_REFERENCE_SOURCE`、
+`VARIABLE_ASSIGNMENT_SOURCE`，避免各自维护不同的变量正则。
+
+`extractVariableNames(text)` 按源码出现顺序去重提取 `{{变量名}}`（包括 `%{{变量名}}`）；
+它保留现有全文扫描范围，不排除代码块或注释，仍提取代码、HTML、公式、尖括号 URI/邮箱自动链接和链接资源示例内完整的标记；不完整的
+示例标记不会越过当前字面上下文的闭合边界，遮住后续变量。该范围包括围栏的信息字符串、
+引用或列表里的围栏、开始独立块的缩进代码、引用链接定义的目标和标题（保留原生容器及惰性续行）、在空行或容器边界处结束的普通 HTML 块，
+以及 `script`、`style`、`pre`、`textarea` 原始 HTML 块。注释、处理指令、声明和 CDATA 会保留完整的物理结束行。
+物理行只使用 LF、CRLF 或 CR 换行；
+其他 Unicode 分隔符不会产生 Markdown 行边界。
+文档中的交互候选在标记之外遇到空行或原生段落中断时结束；raw interaction reader 仍保持不解释上下文的行为。
+Markdown 转义的左花括号不会开启
+文档标记；下方 raw reader API 不解释这些 Markdown 上下文。`createVariableExpressionRegex('gu')`
+返回独立正则，第一捕获组仍是合法且去掉两端空白后的变量名，适合验证完整标记。
+
+编辑器高亮、占位替换或文档分段统一使用 `findDocumentVariableMarkers(text)`，返回按源码顺序
+排列的 `{ start, end, rawName, name }`。`start`、`end` 是原文 UTF-16 偏移，可直接用于
+`text.slice(start, end)`；结果保留重复和非法标记。未闭合标记的 `name` 为 `null`，范围到
+当前字面上下文的边界为止；在这些上下文之外则到文档结尾。
+`extractVariableNames` 复用相同范围，提取去重后的非空合法名称。
+
+只扫描 raw token 时用 `findVariableMarkers(text)`，按第一个 `}}` 一次读取整段标记，不把键内部的 `{{`
+递归提取成其他变量。`readVariableMarker(text, start)` 只读取指定位置；两者返回
+`{ start, end, rawName, name }`，非法内容的 `name` 为 `null`。
+`trimVariablePadding` 使用线性扫描实现相同的两端空白处理，保留 U+FEFF 和内部长空格。
+验证完整标记时应将正则 source 锚定；扫描 Markdown 全文统一使用 document reader，避免在非法内容内部重启匹配。
+行内代码的起止符不会跨空白段落或代码围栏行配对；未配对起始符之后出现的真实变量标记，
+仍会整体占据到第一个字面 `}}`。
+
+`formatVariableReference(name)` 和 `formatVariableAssignment(name)` 返回带两端空格的标记，
+非法名称返回 `null`。例如 `question}` 应写成 `{{ question} }}`；直接拼成 `{{question}}}`
+会提前闭合，得到另一个键 `question`。请复用格式化函数保持往返一致。
+
+分词后的 AST 会保留原始 NUL 的来源信息，直接调用 `parse`、`runSync` 而不重复传入原文，
+也能拒绝含 NUL 的非法名称，同时保留合法的 U+FFFD 字符。多行标记的序列化会移除引用块、
+列表等 Markdown 容器前缀。外部 AST 若已丢失 NUL 和 U+FFFD 的区别，则无法恢复这些信息。
+多行标记里的代码围栏、标题和列表符号仍属于名称；实际包住标记的外层代码块保持原样。
+ATX 和 Setext 标题保留标题层级，周围正文保留段落边界；行内代码和 HTML 里的标记字样
+仍然属于原有 Markdown 上下文。
+标记前后的普通文字保留原来的段落边界。
+
 ## 📖 API 参考
 
 ### 插件导出

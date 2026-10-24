@@ -11,20 +11,46 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import { URL } from 'node:url';
+import { Buffer } from 'node:buffer';
+import { TextEncoder } from 'node:util';
 
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import remarkBreaks from 'remark-breaks';
+import { findDocumentVariableMarkers as esmDocumentMarkers } from '../../dist/index.js';
 
 const require = createRequire(import.meta.url);
+const contractCases = JSON.parse(
+  readFileSync(
+    new URL('../fixtures/variable-name-cases.json', import.meta.url),
+    'utf8'
+  )
+);
 const {
   remarkFlow,
   remarkInteraction,
+  remarkCustomVariable,
   escapeInteractionText,
   InteractionParser,
+  extractVariableNames,
+  findDocumentVariableMarkers,
+  formatVariableAssignment,
 } = require('../../dist/index.js');
+
+test('the built document marker reader is available through ESM and CommonJS', () => {
+  assert.equal(esmDocumentMarkers, findDocumentVariableMarkers);
+  const source = '🙂 `{{` then {{ q }}';
+  const markers = esmDocumentMarkers(source);
+  assert.deepEqual(
+    markers.map(marker => marker.name),
+    [null, 'q']
+  );
+  assert.equal(source.slice(markers[1].start, markers[1].end), '{{ q }}');
+});
 
 const render = (markdown, plugin = remarkFlow) => {
   const processor = unified()
@@ -33,7 +59,7 @@ const render = (markdown, plugin = remarkFlow) => {
     .use(remarkMath)
     .use(plugin)
     .use(remarkBreaks);
-  return processor.runSync(processor.parse(markdown));
+  return processor.runSync(processor.parse(markdown), markdown);
 };
 
 const interactions = tree => {
@@ -225,6 +251,15 @@ test('escaped options come back unchanged through the whole pipeline', () => {
   }
 });
 
+test('escaping operators preserves an unmatched marker and its tail ownership', () => {
+  const option = 'literal {{ unfinished | / ... ]';
+  assert.equal(escapeInteractionText(option), option);
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    const source = `?[${escapeInteractionText(option)} | other]`;
+    assert.deepEqual(interactions(render(source, plugin)), []);
+  }
+});
+
 test('a tree parsed elsewhere is still read the way it always was', () => {
   // `runSync` on a tree this processor did not parse: nothing in it was tokenized, so the
   // plugin must fall back to finding interactions in text, as it did before the tokenizer.
@@ -267,4 +302,1458 @@ test('an interaction that does not parse is left as its text, with no node of it
   walk(tree);
   assert.ok(!types.includes('flowInteraction'), JSON.stringify(types));
   assert.ok(JSON.stringify(tree).includes('?[%{bad} A | B]'));
+});
+
+test('question keys and existing engine names survive the actual Markdown pipeline', () => {
+  const names = [
+    'gender_1',
+    '你的性别是',
+    '你的性别是?',
+    '你的性别是？',
+    '问题:答案：',
+    'question/answer',
+    'a-b.c',
+    'a|b',
+    'a...b',
+    'a//b',
+    'café',
+    'آپ؟',
+    '🙂',
+    '\ufeffname',
+    'name\ufeff',
+    'a\ufeffb',
+    '\ufeff',
+    'has  two spaces',
+    'a{b',
+    'a}b',
+    'a}',
+    '{{nested',
+    'a[b]c',
+    'a]b|//... [c]',
+    String.raw`a\]b`,
+    '**bold** https://www.example.com $x$ &amp;',
+    '"quoted"',
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const name of names) {
+      const got = only(`?[%{{ ${name} }} 男 | 女 | 秘密]`, plugin);
+      assert.deepEqual(got, {
+        variableName: name,
+        buttonTexts: ['男', '女', '秘密'],
+        buttonValues: ['男', '女', '秘密'],
+        isMultiSelect: false,
+      });
+    }
+  }
+});
+
+test('Python-only marker whitespace is trimmed without consuming U+FEFF from the key', () => {
+  const got = only(
+    '?[%{{\u0085\u001c\u001d\u001e\u001f\ufeff问题？\ufeff\u0085}} 男 | 女]'
+  );
+  assert.equal(got.variableName, '\ufeff问题？\ufeff');
+  assert.deepEqual(got.buttonTexts, ['男', '女']);
+});
+
+test('a bracket inside an assignment belongs to the name', () => {
+  const got = only('?[%{{a]b}} 男 | 女]');
+  assert.equal(got.variableName, 'a]b');
+  assert.deepEqual(got.buttonTexts, ['男', '女']);
+});
+
+test('opaque variable delimiters and Markdown syntax survive with escaped option content', () => {
+  const name = String.raw`问题 {{内部} [a] | // ... \] **literal**`;
+  const source = `?[%{{ ${name} }} ${escapeInteractionText('https://example.com/a|b...')} | other]`;
+  const got = only(source);
+  assert.equal(got.variableName, name);
+  assert.deepEqual(got.buttonTexts, ['https://example.com/a|b...', 'other']);
+  assert.deepEqual(extractVariableNames(source), [name]);
+});
+
+test('a marker closing on the next source chunk still ends before the option syntax', () => {
+  // These prefixes are the states reached while an SSE response is being appended. No prefix
+  // is a complete interaction, so none may create a partial button before the final `]` arrives.
+  const source = '?[%{{ question] | // ... } name }} A | B]';
+  for (let end = 1; end < source.length; end += 1) {
+    assert.equal(
+      interactions(render(source.slice(0, end))).length,
+      0,
+      `prefix ${end}`
+    );
+  }
+  assert.equal(only(source).variableName, 'question] | // ... } name');
+});
+
+test('invalid and unclosed leading markers are kept whole instead of finding a nested key', () => {
+  for (const source of [
+    '?[%{{bad\n{{inner}} A | B]',
+    '?[%{{bad\u0085key}} A | B]',
+    '?[%{{bad\u0000key}} A | B]',
+    '?[%{{bad]unclosed A | B]',
+    '?[%{{ }} A | B]',
+    '?[%{{ broken ?[INNER | NEXT]',
+    '?[%{{ broken ?[INNER | NEXT]\n',
+    '?[%{{ broken ?[INNER | NEXT] }}',
+  ]) {
+    assert.equal(interactions(render(source)).length, 0, source);
+  }
+});
+
+test('ordinary multiline marker padding is accepted without allowing a newline in the key', () => {
+  const got = only('?[%{{\n question with spaces \r\n}} A | B]');
+  assert.equal(got.variableName, 'question with spaces');
+});
+
+test('padded serialization preserves a final single brace in an opaque key', () => {
+  const got = only(`?[${formatVariableAssignment('question}')} A | B]`);
+  assert.equal(got.variableName, 'question}');
+  const early = only('?[%{{question}}} A | B]');
+  assert.equal(early.variableName, 'question');
+  assert.deepEqual(early.buttonTexts, ['} A', 'B']);
+});
+
+test('the shared contract interactions survive every actual Markdown plugin path', () => {
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const sample of contractCases.interactions) {
+      assert.deepEqual(only(sample.source, plugin), {
+        variableName: sample.name,
+        buttonTexts: sample.buttons,
+        buttonValues: sample.values,
+        isMultiSelect: false,
+      });
+    }
+  }
+});
+
+test('document literal examples preserve names and later interactions in every plugin', () => {
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const sample of contractCases.document_context_cases) {
+      assert.deepEqual(
+        extractVariableNames(sample.source),
+        sample.names,
+        sample.id
+      );
+      const found = interactions(render(sample.source, plugin));
+      assert.equal(found.length, sample.interaction_count, sample.id);
+      assert.deepEqual(found[0].buttonTexts, sample.buttons, sample.id);
+      assert.deepEqual(found[0].buttonValues, sample.values, sample.id);
+      assert.equal(found[0].variableName, sample.name ?? undefined, sample.id);
+    }
+  }
+});
+
+test('token chunks preserve invalid NUL and a valid literal replacement character', () => {
+  const tree = render(
+    '前缀🙂 ?[%{{bad\u0000key}} A | B] 中间 ?[%{{bad\ufffdkey}} A | B]'
+  );
+  const found = interactions(tree);
+  assert.equal(found.length, 1);
+  assert.equal(found[0].variableName, 'bad\ufffdkey');
+  assert.ok(JSON.stringify(tree).includes('bad\\u0000key'));
+});
+
+test('container token serialization preserves NUL provenance across source representations', () => {
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '>    ' : '> 1. '}${line}`)
+        .join('\n'),
+  ];
+  const samples = [
+    { value: '?[%{{\t\n good\ufffd题\t\r\n}} A | B]', key: 'good\ufffd题' },
+    { value: '?[%{{\t\n bad🙂\ufffd\u0000\ufffdkey\t\r\n}} A | B]' },
+    { value: '{{\t\n good\ufffd题\t\r\n}}' },
+    { value: '{{\t\n bad🙂\ufffd\u0000\ufffdkey\t\r\n}}' },
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const wrap of containers) {
+      for (const sample of samples) {
+        const source = wrap(sample.value);
+        const encoded = new TextEncoder().encode(source);
+        const storage = new Uint8Array(encoded.length + 6);
+        storage.set(encoded, 3);
+        for (const value of [
+          source,
+          Buffer.from(source),
+          encoded,
+          storage.subarray(3, 3 + encoded.length),
+        ]) {
+          for (const withSource of [false, true]) {
+            const processor = unified()
+              .use(remarkParse)
+              .use(remarkGfm)
+              .use(remarkMath)
+              .use(plugin)
+              .use(remarkBreaks);
+            const tree = processor.runSync(
+              processor.parse({ value }),
+              withSource ? { value } : undefined
+            );
+            const found = interactions(tree);
+            if (sample.key) {
+              assert.equal(found.length, 1, source);
+              assert.equal(found[0].variableName, sample.key, source);
+              assert.deepEqual(found[0].buttonTexts, ['A', 'B']);
+            } else {
+              assert.equal(found.length, 0, source);
+              const texts = [];
+              const walk = node => {
+                if (node.type === 'text') texts.push(node.value);
+                (node.children ?? []).forEach(walk);
+              };
+              walk(tree);
+              assert.equal(
+                texts.join('\n'),
+                sample.value.replace(/\r\n/g, '\n'),
+                source
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+});
+
+test('string and byte-valued VFiles preserve raw key validity through every plugin', () => {
+  const source =
+    '前缀🙂 ?[%{{bad\u0000key}} A | B] 中间 ?[%{{good\ufffd题}} C | D] 尾部 {{raw\u0000题}}';
+  const encoded = new TextEncoder().encode(source);
+  const storage = new Uint8Array(encoded.length + 6);
+  storage.set(encoded, 3);
+  const values = [
+    source,
+    Buffer.from(source, 'utf8'),
+    encoded,
+    storage.subarray(3, 3 + encoded.length),
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const value of values) {
+      // unified creates a real VFile for both parse and runSync, retaining its supported value
+      // representation. Token offsets are decoded UTF-16 offsets, not UTF-8 byte offsets.
+      const tree = render({ value }, plugin);
+      assert.deepEqual(interactions(tree), [
+        {
+          variableName: 'good\ufffd题',
+          buttonTexts: ['C', 'D'],
+          buttonValues: ['C', 'D'],
+          isMultiSelect: false,
+        },
+      ]);
+      const serialized = JSON.stringify(tree);
+      assert.ok(serialized.includes('bad\\u0000key'));
+      assert.ok(serialized.includes('raw\\u0000题'));
+    }
+  }
+});
+
+test('a closed marker does not make an unclosed interaction own subsequent Markdown', () => {
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const prefix of [
+      '?[A {{name}}',
+      '?[%{{name}}',
+      '?[A {{bad\u0000key}}',
+    ]) {
+      for (const wrap of containers) {
+        const source = wrap(
+          `${prefix} **strong**\n*emphasis*\n\n# Heading\n\n\u0060\u0060\u0060js\ncode\n\u0060\u0060\u0060\n\n- Item`
+        );
+        for (const value of [
+          source,
+          Buffer.from(source),
+          new TextEncoder().encode(source),
+        ]) {
+          const tree = render({ value }, plugin);
+          assert.equal(interactions(tree).length, 0, source);
+          const found = [];
+          const walk = node => {
+            found.push(node.type);
+            (node.children ?? []).forEach(walk);
+          };
+          walk(tree);
+          for (const type of [
+            'strong',
+            'emphasis',
+            'heading',
+            'code',
+            'list',
+          ]) {
+            assert.ok(
+              found.includes(type),
+              `${type} survives ${JSON.stringify(source)}`
+            );
+          }
+        }
+      }
+    }
+  }
+});
+
+test('multiline markers own block-looking names while actual outer code remains code', () => {
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const key of ['\u0060\u0060\u0060key', '~~~key', '# key', '- key']) {
+      const cases = [
+        { source: `{{\n${key}\n}} ?[A|B]`, buttons: ['A', 'B'], paragraphs: 1 },
+        {
+          source: `?[%{{\n${key}\n}} A|B]`,
+          key,
+          buttons: ['A', 'B'],
+          paragraphs: 1,
+        },
+        {
+          source: `Before\n{{\n${key}\n}} ?[A|B]\nAfter`,
+          buttons: ['A', 'B'],
+          paragraphs: 1,
+        },
+        {
+          source: `{{bad\n${key}\n}} ?[A|B]`,
+          buttons: ['A', 'B'],
+          paragraphs: 1,
+        },
+        { source: `?[%{{bad\n${key}\n}} A|B]`, paragraphs: 1 },
+        { source: `{{\n${key}\n?[A|B]`, paragraphs: 1 },
+        { source: `{{\n${key}\n?[A|B]\n`, paragraphs: 1 },
+        {
+          source: `\u0060\u0060\u0060\n{{\n${key}\n}} ?[A|B]\n\u0060\u0060\u0060\n?[C|D]`,
+          buttons: ['C', 'D'],
+          paragraphs: 1,
+          codes: 1,
+        },
+      ];
+      for (const sample of cases) {
+        for (const wrap of containers) {
+          const source = wrap(sample.source);
+          for (const value of [
+            source,
+            Buffer.from(source),
+            new TextEncoder().encode(source),
+          ]) {
+            const tree = render({ value }, plugin);
+            const found = interactions(tree);
+            assert.equal(found.length, sample.buttons ? 1 : 0, source);
+            if (sample.buttons) {
+              assert.deepEqual(found[0].buttonTexts, sample.buttons, source);
+              assert.equal(found[0].variableName, sample.key, source);
+            }
+            const types = [];
+            const walk = node => {
+              types.push(node.type);
+              assert.ok(
+                !node.data?.flowOpaqueParagraph,
+                'temporary flow metadata is removed'
+              );
+              (node.children ?? []).forEach(walk);
+            };
+            walk(tree);
+            assert.equal(
+              types.filter(type => type === 'code').length,
+              sample.codes ?? 0,
+              source
+            );
+            assert.equal(
+              types.filter(type => type === 'paragraph').length,
+              sample.paragraphs,
+              source
+            );
+          }
+        }
+      }
+    }
+  }
+});
+
+test('shared marker boundaries are atomic in every actual Markdown plugin path', () => {
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const sample of contractCases.boundary_cases) {
+      const found = interactions(render(sample.source, plugin));
+      assert.equal(found.length, sample.interaction_count, sample.source);
+      if (sample.interaction_count) {
+        const expected = {
+          buttonTexts: sample.buttons,
+          buttonValues: sample.values,
+          isMultiSelect: false,
+        };
+        assert.deepEqual(
+          found[0],
+          sample.name === null
+            ? expected
+            : { ...expected, variableName: sample.name },
+          sample.source
+        );
+      }
+    }
+  }
+});
+
+test('multiline markers keep ATX headings and their surrounding Markdown structure', () => {
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const depth of [1, 2, 6]) {
+      for (const key of ['\u0060\u0060\u0060key', '~~~key', '# key', '- key']) {
+        for (const named of [false, true]) {
+          const marker = named
+            ? `?[%{{\n${key}\n}} A|B]`
+            : `{{\n${key}\n}} ?[A|B]`;
+          for (const wrap of containers) {
+            const source = wrap(
+              `${'#'.repeat(depth)} **Heading** ${marker} ###\nAfter\n\n\u0060\u0060\u0060js\ncode\n\u0060\u0060\u0060`
+            );
+            for (const value of [
+              source,
+              Buffer.from(source),
+              new TextEncoder().encode(source),
+            ]) {
+              const tree = render({ value }, plugin);
+              const found = interactions(tree);
+              assert.equal(found.length, 1, source);
+              assert.deepEqual(found[0].buttonTexts, ['A', 'B'], source);
+              assert.equal(
+                found[0].variableName,
+                named ? key : undefined,
+                source
+              );
+              const nodes = [];
+              const walk = node => {
+                nodes.push(node);
+                (node.children ?? []).forEach(walk);
+              };
+              walk(tree);
+              const headings = nodes.filter(node => node.type === 'heading');
+              assert.equal(headings.length, 1, source);
+              assert.equal(headings[0].depth, depth, source);
+              assert.equal(headings[0].children[0].type, 'strong', source);
+              assert.equal(
+                nodes.filter(node => node.type === 'code').length,
+                1,
+                source
+              );
+              assert.equal(
+                nodes.find(node => node.type === 'code').value,
+                'code',
+                source
+              );
+              assert.equal(
+                nodes.filter(node => node.type === 'paragraph').length,
+                1,
+                source
+              );
+              assert.ok(!JSON.stringify(headings[0]).includes('###'), source);
+            }
+          }
+        }
+      }
+    }
+    for (const sample of [
+      { source: '# Heading {{bad\n\u0060\u0060\u0060key\n}} ?[A|B]', count: 1 },
+      {
+        source: '# Heading ?[%{{bad\n\u0060\u0060\u0060key\n}} A|B]',
+        count: 0,
+      },
+      { source: '# Heading {{\n\u0060\u0060\u0060key\n?[A|B]', count: 0 },
+    ]) {
+      for (const wrap of containers) {
+        const source = wrap(sample.source);
+        const tree = render(source, plugin);
+        assert.equal(interactions(tree).length, sample.count, source);
+        assert.ok(JSON.stringify(tree).includes('"type":"heading"'), source);
+        assert.ok(!JSON.stringify(tree).includes('"type":"code"'), source);
+      }
+    }
+  }
+});
+
+test('code spans and escaped braces do not claim a following real code fence', () => {
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const prefix of [
+      '\u0060{{\u0060 ',
+      '\u0060\u0060{{\u0060\u0060',
+      '\u0060\u0060\u0060{{\u0060\u0060\u0060',
+      String.raw`\{{`,
+      '# Heading \u0060{{\u0060',
+      '\u0060{{\nword\u0060',
+      'Text <span title="{{">',
+      'Text <!-- {{\ntext\n-->',
+    ]) {
+      for (const fence of ['\u0060\u0060\u0060', '~~~']) {
+        for (const wrap of containers) {
+          const source = wrap(`${prefix}\n${fence}js\ncode\n${fence}\n?[A|B]`);
+          for (const value of [
+            source,
+            Buffer.from(source),
+            new TextEncoder().encode(source),
+          ]) {
+            const tree = render({ value }, plugin);
+            const found = interactions(tree);
+            assert.equal(found.length, 1, source);
+            assert.deepEqual(found[0].buttonTexts, ['A', 'B'], source);
+            const codes = [];
+            const walk = node => {
+              if (node.type === 'code') codes.push(node);
+              (node.children ?? []).forEach(walk);
+            };
+            walk(tree);
+            assert.equal(codes.length, 1, source);
+            assert.equal(codes[0].lang, 'js', source);
+            assert.equal(codes[0].value, 'code', source);
+          }
+        }
+      }
+    }
+    // Backticks inside an interaction are literal; they cannot hide its marker.
+    assert.equal(
+      only('?[%{{\n\u0060\u0060\u0060key\n}} \u0060{{body}}\u0060|B]', plugin)
+        .variableName,
+      '\u0060\u0060\u0060key'
+    );
+    const html = '<div>Heading {{\n\u0060\u0060\u0060key\n}} ?[A|B]\n</div>';
+    const htmlTree = render(html, plugin);
+    assert.equal(interactions(htmlTree).length, 0, html);
+    assert.equal(htmlTree.children[0].type, 'html', html);
+    assert.equal(htmlTree.children[0].value, html, html);
+  }
+});
+
+test('inline lookahead preserves container boundaries and marker-first ownership', () => {
+  const question = '?[%{{ real }} A|B]';
+  for (const delimiter of ['`', '$']) {
+    for (const boundary of [
+      '> ',
+      '- ',
+      '1. ',
+      '---\n',
+      '<div>\n',
+      '=\n',
+      '===\n',
+      '-\n',
+      '--\n',
+    ]) {
+      const source = `Text ${delimiter}{{ unfinished\n${boundary}${delimiter} end\n\n${question}`;
+      for (const plugin of [
+        remarkFlow,
+        remarkInteraction,
+        remarkCustomVariable,
+      ]) {
+        assert.deepEqual(interactions(render(source, plugin)), [], source);
+      }
+      const ordinary = `Text ${delimiter}unfinished\n${boundary}${delimiter} end\n\nAfter`;
+      const native = unified()
+        .use(remarkParse)
+        .use(remarkGfm)
+        .use(remarkMath)
+        .use(remarkBreaks);
+      const expected = native.runSync(
+        native.parse(ordinary),
+        ordinary
+      ).children;
+      for (const plugin of [
+        remarkFlow,
+        remarkInteraction,
+        remarkCustomVariable,
+      ]) {
+        assert.deepEqual(render(ordinary, plugin).children, expected, ordinary);
+      }
+    }
+    // Ordered markers other than 1 cannot interrupt an existing paragraph.
+    const continued = `Text ${delimiter}{{ unfinished\n2. ${delimiter} end\n\n${question}`;
+    assert.equal(only(continued).variableName, 'real', continued);
+  }
+  for (const body of [
+    '{{ complete }}',
+    String.raw`\{{ escaped`,
+    '<span title="{{">',
+    '[x](url "{{")',
+    '$x {{ y$',
+  ]) {
+    const source = `Text \u0060${body}\n> \u0060 end\n\n${question}`;
+    for (const plugin of [
+      remarkFlow,
+      remarkInteraction,
+      remarkCustomVariable,
+    ]) {
+      assert.equal(only(source, plugin).variableName, 'real', source);
+    }
+  }
+});
+
+test('source seeds preserve parser order, copies, repeated parses, and original offsets', () => {
+  const build = (plugin, mode) => {
+    let processor = unified();
+    if (mode === 'reverse') processor.use(plugin).use(remarkParse);
+    else processor.use(remarkParse).use(plugin);
+    processor.use(remarkGfm).use(remarkMath).use(remarkBreaks);
+    if (mode === 'copy') processor = processor.freeze()().use(remarkParse);
+    if (mode === 'multiple')
+      processor
+        .use(remarkFlow)
+        .use(remarkInteraction)
+        .use(remarkCustomVariable);
+    return processor;
+  };
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const mode of ['normal', 'reverse', 'copy', 'multiple']) {
+      const processor = build(plugin, mode);
+      const run = source => processor.runSync(processor.parse(source), source);
+      for (const eol of ['\n', '\r\n', '\r']) {
+        for (const prefix of ['🙂 ', '\uFEFF🙂 ', '\u0000🙂 ', '\uFFFD🙂 ']) {
+          const source = `${prefix}Text \u0060{{ unfinished${eol}> \u0060 end${eol}${eol}?[%{{ real }} A|B]`;
+          for (const value of [
+            source,
+            Buffer.from(source),
+            new TextEncoder().encode(source),
+          ]) {
+            assert.deepEqual(interactions(run({ value })), [], source);
+          }
+        }
+      }
+      const ordinary = 'Text `unfinished\n> ` end\n\nAfter';
+      const native = unified()
+        .use(remarkParse)
+        .use(remarkGfm)
+        .use(remarkMath)
+        .use(remarkBreaks);
+      assert.deepEqual(
+        run(ordinary).children,
+        native.runSync(native.parse(ordinary), ordinary).children
+      );
+      assert.equal(
+        interactions(run('?[%{{ \uFEFF }} A|B]'))[0].variableName,
+        '\uFEFF'
+      );
+      const parser = processor.parser;
+      assert.equal(processor.parser, parser);
+      processor.parser = () => {
+        throw new Error('parser failure');
+      };
+      assert.throws(() => processor.parse('{{ pending'), /parser failure/);
+      processor.parser = parser;
+      assert.equal(
+        interactions(run('?[%{{ real }} A|B]'))[0].variableName,
+        'real'
+      );
+    }
+  }
+});
+
+test('HTML-looking link titles do not extend lookahead into a later Markdown block', () => {
+  const sources = [
+    '``',
+    'Inline ``unclosed',
+    'Inline ```unclosed',
+    'Intro```mermaid\ngraph TD\nA --> B\n```Outro',
+    '[`code`](url "<!-- <figure></figure>")\n\n<!-- actual -->',
+    '[docs][ref]\n\n[ref]: https://example.com "<!-- <figure></figure>"\n\n<figure>Actual</figure>',
+    '[docs](url "<!-- example")\n\n\u0060\u0060\u0060html\n<!-- actual -->\n\u0060\u0060\u0060',
+    'Text <!-- real\ncontinued -->\n\n<figure>Actual</figure>',
+  ];
+  for (const source of sources) {
+    const native = unified()
+      .use(remarkParse)
+      .use(remarkGfm)
+      .use(remarkMath)
+      .use(remarkBreaks);
+    const expected = native.runSync(native.parse(source), source).children;
+    for (const plugin of [
+      remarkFlow,
+      remarkInteraction,
+      remarkCustomVariable,
+    ]) {
+      assert.deepEqual(render(source, plugin).children, expected, source);
+    }
+  }
+});
+
+test('native math and link resources keep marker examples within their inline context', () => {
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+  ];
+  const prefixes = [
+    '$x {{ y$',
+    '$$x {{ y$$',
+    'Math $x\n{{ y$',
+    String.raw`\$$x {{ y$`,
+    '[x](url "{{")',
+    "[x](url '{{')",
+    '[x](url ({{))',
+    '[x](<{{>)',
+    String.raw`[x](url "first\" {{")`,
+    '[x](url "first\n{{")',
+    '![x](url "{{")',
+    '[outer ![inner](url)](url "{{")',
+    '![outer [inner](url "{{")](url)',
+    String.raw`\[brackets] [x](url "{{")`,
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const prefix of prefixes) {
+      for (const wrap of containers) {
+        for (const suffix of [
+          '\n\n# Heading',
+          '\n```js\ncode\n```',
+          '\n\nAfter',
+        ]) {
+          const source = wrap(`${prefix}${suffix}`);
+          const native = unified()
+            .use(remarkParse)
+            .use(remarkGfm)
+            .use(remarkMath)
+            .use(remarkBreaks);
+          const expected = native.runSync(
+            native.parse(source),
+            source
+          ).children;
+          for (const value of [
+            source,
+            Buffer.from(source),
+            new TextEncoder().encode(source),
+          ]) {
+            assert.deepEqual(
+              render({ value }, plugin).children,
+              expected,
+              source
+            );
+          }
+        }
+        const source = wrap(`${prefix}\n\n?[%{{ q }} A|B]`);
+        assert.equal(only(source, plugin).variableName, 'q', source);
+        const multiline = wrap(
+          `${prefix} ?[%{{\n\u0060\u0060\u0060key\n}} A|B]`
+        );
+        assert.equal(
+          only(multiline, plugin).variableName,
+          '\u0060\u0060\u0060key',
+          multiline
+        );
+      }
+    }
+    // Math and resources encountered after a true marker opener remain opaque key text.
+    for (const name of ['$x', '[x](url "literal")', 'price $[x](url)']) {
+      assert.equal(only(`?[%{{\n${name}\n}} A|B]`, plugin).variableName, name);
+    }
+    // An unsuccessful resource does not hide its real, unclosed outside marker.
+    for (const source of [
+      '[x](url "{{\n\n?[A|B]',
+      '[outer [inner](url)](url "{{")\n\n?[A|B]',
+      'Math ${{\n\n$ then ?[%{{ q }} A|B]',
+      'Math $${{\n\n$$ then ?[%{{ q }} A|B]',
+      'Unmatched $$$ {{\n\n?[A|B]',
+    ]) {
+      assert.equal(interactions(render(source, plugin)).length, 0, source);
+    }
+    for (const delimiter of ['`', '$', '$$']) {
+      const source = `# Heading ${delimiter}{{\nq${delimiter} }} ?[A|B]`;
+      const tree = render(source, plugin);
+      assert.equal(tree.children[0].type, 'heading', source);
+      assert.equal(tree.children.length, 1, source);
+      assert.equal(interactions(tree).length, 1, source);
+      assert.ok(!JSON.stringify(tree).includes('"type":"inlineCode"'), source);
+      assert.ok(!JSON.stringify(tree).includes('"type":"inlineMath"'), source);
+    }
+  }
+});
+
+test('document block examples cannot hide later rendered variable questions', () => {
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const source of [
+      '    {{ unfinished\n\n?[%{{ real }} A|B]',
+      '\t{{ unfinished\n\n?[%{{ real }} A|B]',
+      '<script>\n{{ unfinished\n</SCRIPT>\n?[%{{ real }} A|B]',
+      '<style>\n{{ unfinished\n</style>\n?[%{{ real }} A|B]',
+      '<pre>\n{{ unfinished\n</pre>\n?[%{{ real }} A|B]',
+      '<textarea>\n{{ unfinished\n</textarea>\n?[%{{ real }} A|B]',
+    ]) {
+      assert.deepEqual(extractVariableNames(source), ['real'], source);
+      for (const value of [
+        source,
+        Buffer.from(source),
+        new TextEncoder().encode(source),
+      ]) {
+        assert.equal(only({ value }, plugin).variableName, 'real', source);
+      }
+    }
+    const info = '```{{language}}\n{{ unfinished\n```\n?[%{{ real }} A|B]';
+    assert.deepEqual(extractVariableNames(info), ['language', 'real']);
+    assert.equal(only(info, plugin).variableName, 'real');
+  }
+});
+
+test('terminated HTML blocks keep unfinished closing-line examples local', () => {
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const [open, close] of [
+      ['<!--', '-->'],
+      ['<?x', '?>'],
+      ['<![CDATA[', ']]>'],
+      ['<!DOCTYPE', '>'],
+    ]) {
+      for (const eol of ['\n', '\r\n', '\r']) {
+        const prefix = `${open}${eol}{{ unfinished${eol}${close} {{ still literal`;
+        const source = `${prefix}${eol}?[%{{ real }} A|B]`;
+        assert.deepEqual(extractVariableNames(source), ['real'], source);
+        for (const value of [source, Buffer.from(source)]) {
+          const tree = render({ value }, plugin);
+          assert.equal(tree.children[0].type, 'html', source);
+          assert.equal(interactions(tree).length, 1, source);
+          assert.equal(interactions(tree)[0].variableName, 'real', source);
+          assert.deepEqual(
+            interactions(tree)[0].buttonTexts,
+            ['A', 'B'],
+            source
+          );
+        }
+      }
+    }
+  }
+});
+
+test('unmatched code openings cannot pair across a paragraph or fence through an opaque marker', () => {
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const ticks of ['`', '``']) {
+      for (const boundary of [
+        '\n\n',
+        '\n \t\n',
+        '\r\n\r\n',
+        '\n```text\nexample\n```\n',
+        '\n~~~\nexample\n~~~\n',
+      ]) {
+        const original = `🙂 Show ${ticks}{{${boundary}${ticks} then ?[%{{ q }} A|B]`;
+        const marker = original.slice(
+          original.indexOf('{{') + 2,
+          original.indexOf('}}')
+        );
+        assert.deepEqual(
+          extractVariableNames(original),
+          boundary.includes('example') ? [] : [`${ticks} then ?[%{{ q`],
+          original
+        );
+        for (const wrap of containers) {
+          const source = wrap(original);
+          for (const value of [
+            source,
+            Buffer.from(source),
+            new TextEncoder().encode(source),
+          ]) {
+            const tree = render({ value }, plugin);
+            assert.equal(interactions(tree).length, 0, source);
+            const types = [];
+            const walk = node => {
+              types.push(node.type);
+              (node.children ?? []).forEach(walk);
+            };
+            walk(tree);
+            assert.ok(!types.includes('inlineCode'), source);
+          }
+        }
+        assert.ok(marker.includes('?[%{{ q'), original);
+      }
+    }
+    // A valid code span still owns its braces, and parser state never leaks to another document.
+    const healthy = '🙂 Show `{{\nordinary` then ?[%{{\nq\n}} A|B]';
+    const healthyTree = render(healthy, plugin);
+    assert.equal(interactions(healthyTree)[0].variableName, 'q');
+    assert.ok(JSON.stringify(healthyTree).includes('"type":"inlineCode"'));
+    const processor = unified().use(remarkParse).use(plugin);
+    const bad = 'Show `{{\n\n` then ?[%{{ q }} A|B]';
+    processor.runSync(processor.parse(bad), bad);
+    const good = 'Show `{{` then ?[%{{ q }} A|B]';
+    assert.equal(
+      interactions(processor.runSync(processor.parse(good), good)).length,
+      1
+    );
+    for (const width of [2, 3, 4]) {
+      const ticks = '`'.repeat(width);
+      const source = `Show \\${ticks}{{${ticks.slice(1)} then ?[%{{ q }} A|B]`;
+      assert.deepEqual(extractVariableNames(source), ['q'], source);
+      assert.equal(interactions(render(source, plugin)).length, 1, source);
+    }
+  }
+});
+
+test('multiline markers keep native paragraph continuation and Setext headings', () => {
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const wrap of containers) {
+      for (const sample of [
+        { source: '?[%{{\nkey\n}} A\n|B]', key: 'key' },
+        {
+          source: 'Before\n?[\n%{{\n\u0060\u0060\u0060key\n}} A\n|B]\nAfter',
+          key: '\u0060\u0060\u0060key',
+        },
+        { source: '**Heading** {{\nkey\n}} ?[A|B]\n===', depth: 1 },
+        { source: '**Heading** {{\nkey\n}} ?[A|B]\n---', depth: 2 },
+      ]) {
+        const source = wrap(sample.source);
+        for (const value of [
+          source,
+          Buffer.from(source),
+          new TextEncoder().encode(source),
+        ]) {
+          const tree = render({ value }, plugin);
+          const found = interactions(tree);
+          assert.equal(found.length, 1, source);
+          assert.deepEqual(found[0].buttonTexts, ['A', 'B'], source);
+          assert.equal(found[0].variableName, sample.key, source);
+          const nodes = [];
+          const walk = node => {
+            nodes.push(node);
+            (node.children ?? []).forEach(walk);
+          };
+          walk(tree);
+          assert.equal(
+            nodes.filter(node => node.type === 'paragraph').length,
+            sample.depth ? 0 : 1,
+            source
+          );
+          if (sample.depth) {
+            const headings = nodes.filter(node => node.type === 'heading');
+            assert.equal(headings.length, 1, source);
+            assert.equal(headings[0].depth, sample.depth, source);
+          }
+        }
+      }
+    }
+    // Outside the marker, document containers and flow blocks resume their normal priority.
+    for (const [suffix, type] of [
+      ['- Item', 'list'],
+      ['> Quote', 'blockquote'],
+      ['<div>\nHTML\n</div>', 'html'],
+      ['# Heading', 'heading'],
+    ]) {
+      const source = `{{\nkey\n}}\n${suffix}`;
+      const tree = render(source, plugin);
+      assert.deepEqual(
+        tree.children.map(node => node.type),
+        ['paragraph', type],
+        source
+      );
+    }
+    const source = 'Before\n- Item\n\n{{\nkey\n}}';
+    assert.deepEqual(
+      render(source, plugin).children.map(node => node.type),
+      ['paragraph', 'list', 'paragraph'],
+      source
+    );
+  }
+});
+
+test('document extraction and the real Markdown pipeline agree at literal boundaries', () => {
+  const question = '?[%{{ real }} A|B]';
+  const cases = [
+    {
+      source: `[foo]: /url "{{ unfinished"\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `# Title\n    {{ unfinished\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `~~~\ncode\n~~~\n    {{ unfinished\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `---\n    {{ unfinished\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `?[ unfinished\n\n\u0060{{\u0060\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `- ~~~\n  {{ unfinished\n  ~~~\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `<div>\n{{ unfinished\n</div>\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `~~~\r{{ unfinished\r~~~\r${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `    {{ unfinished\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `\t{{ unfinished\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    { source: `$x {{ y$\n\n${question}`, names: ['real'], variables: ['real'] },
+    {
+      source: `[x](url "{{")\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `![x](url "{{")\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `# Heading \u0060{{\nq\u0060 then ${question}`,
+      names: ['q` then ?[%{{ real'],
+      variables: [],
+    },
+    {
+      source: '# Heading ${{\nq$ then ' + question,
+      names: ['q$ then ?[%{{ real'],
+      variables: [],
+    },
+    {
+      source: `# Heading \u0060{{\u0060\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `# Heading $x {{ y$\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    },
+    {
+      source: `\u0060\u0060\u0060{{language}}\nx\n\u0060\u0060\u0060\n${question}`,
+      names: ['language', 'real'],
+      variables: ['real'],
+    },
+    {
+      source: '?[%{{ q }} A ${{ y$ | B]\n\n?[%{{ real }} C|D]',
+      names: ['q'],
+      variables: ['q'],
+    },
+  ];
+  for (const tag of ['script', 'style', 'pre', 'textarea']) {
+    cases.push({
+      source: `<${tag}>\n{{ unfinished\n</${tag}>\n\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    });
+    cases.push({
+      source: `<${tag}>\ncode\n</${tag}> {{ unfinished\n${question}`,
+      names: ['real'],
+      variables: ['real'],
+    });
+  }
+  for (const width of [2, 3, 4]) {
+    cases.push({
+      source: `Show \\${'$'.repeat(width)}{{${'$'.repeat(width - 1)} then ${question}`,
+      names: ['real'],
+      variables: ['real'],
+    });
+  }
+  for (const opening of ['[', '![']) {
+    cases.push({
+      source: `${opening.repeat(1024)}${'[x](u)'.repeat(1024)} ${question}`,
+      names: ['real'],
+      variables: ['real'],
+    });
+  }
+  for (const sample of cases) {
+    assert.deepEqual(
+      extractVariableNames(sample.source),
+      sample.names,
+      sample.source
+    );
+    for (const plugin of [
+      remarkFlow,
+      remarkInteraction,
+      remarkCustomVariable,
+    ]) {
+      for (const source of [sample.source, Buffer.from(sample.source)]) {
+        assert.deepEqual(
+          interactions(render({ value: source }, plugin)).map(
+            item => item.variableName
+          ),
+          sample.variables,
+          sample.source
+        );
+      }
+    }
+  }
+});
+
+test('container projection keeps document metadata aligned with the rendered controls', () => {
+  const q = '?[%{{ real }} A|B]';
+  const cases = [
+    {
+      prefix: '> Text `{{ unfinished\n> # Heading ` end\n\n',
+      names: [],
+      count: 0,
+    },
+    {
+      prefix: '- Text ${{ unfinished\n  # Heading $ end\n\n',
+      names: [],
+      count: 0,
+    },
+    {
+      prefix: '2. Text `{{ unfinished\n    # Heading ` end\n\n',
+      names: [],
+      count: 0,
+    },
+    {
+      prefix: '> <div>\n> {{ unfinished\n> </div>\n\n',
+      names: ['real'],
+      count: 1,
+    },
+    {
+      prefix: '> - <script>\n>   {{ unfinished\n>   </script>\n\n',
+      names: ['real'],
+      count: 1,
+    },
+    {
+      prefix: '<script>\n</script>\n    {{ unfinished\n\n',
+      names: ['real'],
+      count: 1,
+    },
+    { prefix: '?[ unfinished\n~~~\n{{ x\n~~~\n', names: ['real'], count: 1 },
+    { prefix: '> [foo]: /url "{{ unfinished"\n\n', names: ['real'], count: 1 },
+    {
+      prefix: '> [foo]: /url\n>   "{{ unfinished"\n\n',
+      names: ['real'],
+      count: 1,
+    },
+    {
+      prefix: '> [foo]:\n> /url "{{ unfinished"\n\n',
+      names: ['real'],
+      count: 1,
+    },
+    { prefix: '> [foo]: /url\n"{{ unfinished"\n\n', names: ['real'], count: 1 },
+    { prefix: '> [foo]:\n/url "{{ unfinished"\n\n', names: ['real'], count: 1 },
+    {
+      prefix: '> Intro\n> [foo]: /url "{{ unfinished"\n\n',
+      names: [],
+      count: 0,
+    },
+    {
+      prefix: 'Text `{{ unfinished\n2. # heading\n` end\n\n',
+      names: ['real'],
+      count: 1,
+    },
+    {
+      prefix: '> Text `{{ unfinished\n> continuation ` end\n\n',
+      names: ['real'],
+      count: 1,
+    },
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const item of cases) {
+      for (const eol of ['\n', '\r\n', '\r']) {
+        const source = (item.prefix + q).replaceAll('\n', eol);
+        assert.deepEqual(extractVariableNames(source), item.names, source);
+        for (const value of [source, Buffer.from(source)]) {
+          const found = interactions(render({ value }, plugin));
+          assert.equal(found.length, item.count, source);
+          if (found.length) {
+            assert.equal(found[0].variableName, 'real', source);
+            assert.deepEqual(found[0].buttonTexts, ['A', 'B'], source);
+          }
+        }
+      }
+    }
+  }
+});
+
+test('container code blocks and HTML recognizers use the same original-source projection', () => {
+  const outside = '?[%{{ real }} A|B]';
+  const cases = [
+    ['>     {{ unfinished', ['real'], 1],
+    ['> >     {{ unfinished', ['real'], 1],
+    ['>\t  {{ unfinished', ['real'], 1],
+    ['> \t  {{ unfinished', ['real'], 1],
+    ['-     {{ unfinished', ['real'], 1],
+    ['- Intro\n\n      {{ unfinished', ['real'], 1],
+    ['2. Intro\n\n       {{ unfinished', ['real'], 1],
+    ['>     {{ unfinished\n>\n>     still code', ['real'], 1],
+    ['- Intro\n\n    ```\n  {{ unfinished\n    ```', ['real'], 1],
+    ['2. Intro\n\n    ~~~\n   {{ unfinished\n    ~~~', ['real'], 1],
+    ['> \t~~~\n> {{ unfinished\n> \t~~~', ['real'], 1],
+    ['> \t```\n> {{ unfinished\n> \t```', ['real'], 1],
+    ['- Intro\n\n\t~~~\n  {{ unfinished\n\t~~~', ['real'], 1],
+    ['> \t{{ unfinished', [], 0],
+    ['> Intro\n>     {{ unfinished', [], 0],
+    ['Paragraph\n    {{ unfinished', [], 0],
+    ['>     ```\n> {{ unfinished\n>     ```', [], 0],
+  ];
+  for (const [first, rest] of [
+    ['> ', '> '],
+    ['> \t', '> '],
+    ['- ', '  '],
+    ['> - ', '>   '],
+  ]) {
+    for (const [opening, closing] of [
+      ['<div>', '</div>'],
+      ['<script>', '</script>'],
+      ['<style>', '</style>'],
+      ['<pre>', '</pre>'],
+      ['<textarea>', '</textarea>'],
+      ['<!--', '-->'],
+      ['<?x', '?>'],
+      ['<![CDATA[', ']]>'],
+      ['<!DOCTYPE', '>'],
+    ])
+      cases.push([
+        `${first}${opening}\n${rest}{{ unfinished\n${rest}${closing}`,
+        ['real'],
+        1,
+      ]);
+  }
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const [prefix, names, count] of cases) {
+      for (const eol of ['\n', '\r\n', '\r']) {
+        const source = `${prefix}\n\n${outside}`.replaceAll('\n', eol);
+        assert.deepEqual(extractVariableNames(source), names, source);
+        for (const value of [source, Buffer.from(source)]) {
+          const found = interactions(render({ value }, plugin));
+          assert.equal(found.length, count, source);
+          if (found.length) {
+            assert.equal(found[0].variableName, 'real', source);
+            assert.deepEqual(found[0].buttonTexts, ['A', 'B'], source);
+          }
+        }
+      }
+    }
+  }
+});
+
+test('physical tab stops retain code versus paragraph semantics in mixed containers', () => {
+  const cases = JSON.parse(
+    readFileSync(
+      new URL('../fixtures/container-tab-cases.json', import.meta.url),
+      'utf8'
+    )
+  );
+  for (const item of cases) {
+    const native = unified().use(remarkParse).parse(item.source);
+    let codeExample = false;
+    const walk = node => {
+      if (node.type === 'code' && node.value.includes('{{ unfinished'))
+        codeExample = true;
+      (node.children ?? []).forEach(walk);
+    };
+    walk(native);
+    assert.deepEqual(item.names, codeExample ? ['real'] : [], item.id);
+    for (const plugin of [
+      remarkFlow,
+      remarkInteraction,
+      remarkCustomVariable,
+    ]) {
+      for (const eol of ['\n', '\r\n', '\r']) {
+        const source = item.source.replaceAll('\n', eol);
+        assert.deepEqual(extractVariableNames(source), item.names, item.id);
+        const controls = interactions(
+          render({ value: Buffer.from(source) }, plugin)
+        );
+        assert.deepEqual(
+          controls.map(control => control.variableName),
+          item.names,
+          item.id
+        );
+      }
+    }
+  }
+});
+
+test('native HTML block admission does not require a complete opening tag', () => {
+  const q = '?[%{{ real }} A|B]';
+  const prefixes = ['<div\n{{ unfinished'];
+  for (const tag of ['script', 'style', 'pre', 'textarea']) {
+    for (const opener of [`<${tag}`, `<${tag} title="unfinished`]) {
+      prefixes.push(`${opener}\n\n{{ unfinished\n</${tag}>`);
+    }
+  }
+  for (const [first, continuation] of [
+    ['> ', '> '],
+    ['- ', '  '],
+    ['> - ', '>   '],
+  ]) {
+    for (const opener of ['<!--', '<?x', '<![CDATA[', '<!DOCTYPE']) {
+      prefixes.push(
+        `${first}${opener}\n${continuation}{{ unfinished\n${continuation}{{ still unfinished`
+      );
+    }
+  }
+  for (const prefix of prefixes) {
+    for (const eol of ['\n', '\r\n', '\r']) {
+      const source = `${prefix}\n\n${q}`.replaceAll('\n', eol);
+      const native = unified().use(remarkParse).parse(source);
+      const html = [];
+      const walk = node => {
+        if (node.type === 'html') html.push(node.value);
+        (node.children ?? []).forEach(walk);
+      };
+      walk(native);
+      assert.equal(html.length, 1, source);
+      assert.ok(html[0].includes('{{ unfinished'), source);
+      assert.deepEqual(extractVariableNames(source), ['real'], source);
+      for (const plugin of [
+        remarkFlow,
+        remarkInteraction,
+        remarkCustomVariable,
+      ]) {
+        const found = interactions(
+          render({ value: Buffer.from(source) }, plugin)
+        );
+        assert.deepEqual(
+          found.map(control => control.variableName),
+          ['real'],
+          source
+        );
+      }
+    }
+  }
+});
+
+test('complete CommonMark angle autolinks bound examples and preserve native paragraphs', () => {
+  const cases = JSON.parse(
+    readFileSync(
+      new URL('../fixtures/autolink-cases.json', import.meta.url),
+      'utf8'
+    )
+  );
+  for (const item of cases) {
+    const native = unified().use(remarkParse).parse(item.source);
+    let links = 0;
+    const walk = node => {
+      if (node.type === 'link') links++;
+      (node.children ?? []).forEach(walk);
+    };
+    walk(native);
+    assert.equal(links > 0, item.autolink, item.id);
+    for (const plugin of [
+      remarkFlow,
+      remarkInteraction,
+      remarkCustomVariable,
+    ]) {
+      for (const eol of ['\n', '\r\n', '\r']) {
+        const source = item.source.replaceAll('\n', eol);
+        assert.deepEqual(extractVariableNames(source), item.names, item.id);
+        for (const value of [source, Buffer.from(source)]) {
+          const tree = render({ value }, plugin);
+          const controls = interactions(tree);
+          assert.deepEqual(
+            controls.map(control => control.variableName),
+            item.variables,
+            item.id
+          );
+          if (item.autolink)
+            assert.equal(tree.children.length, native.children.length, item.id);
+        }
+      }
+    }
+  }
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    const fallback = '<span title="{{"> body\n\n?[%{{ real }} A|B]';
+    const tree = render(fallback, plugin);
+    assert.equal(tree.children.length, 2);
+    assert.deepEqual(
+      interactions(tree).map(control => control.variableName),
+      ['real']
+    );
+    const name = '<https://{{unfinished>';
+    assert.equal(only(`?[%{{${name}}} A|B]`, plugin).variableName, name);
+  }
 });

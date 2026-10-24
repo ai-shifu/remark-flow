@@ -10,7 +10,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 
-English | [简体中文](README_ZH-CN.md)
+English | [Simplified Chinese](README_ZH-CN.md)
 
 </div>
 
@@ -91,7 +91,7 @@ Buttons without a variable also support multi-select (`||`) and the `...` text-i
 
 ```markdown
 ?[Save Changes//save-action]
-?[确定//confirm | 取消//cancel]
+?[Confirm//confirm | Cancel//cancel]
 ```
 
 **Output:** `{ buttonTexts: ["Save Changes"], buttonValues: ["save-action"] }`
@@ -170,10 +170,109 @@ The first separator type encountered determines the parsing mode:
 ### 8. Unicode & International Support
 
 ```markdown
-?[%{{语言}} English//en | 中文//zh | 日本語//ja]
-?[%{{用户名}}...请输入您的姓名]
+?[%{{language}} English//en | Spanish//es | French//fr]
+?[%{{café preference}}...How do you like your coffee?]
 ?[👍 Good | 👎 Bad | 🤔 Unsure]
 ```
+
+### Variable names
+
+Variable names are opaque Unicode text after trimming the established Python whitespace set
+at both ends. Internal ordinary spaces, punctuation, emoji, single braces, `[` and `]`, `|`,
+`//`, and `...` are kept exactly as written. Names must be nonempty and cannot contain Unicode
+Cc control characters, U+2028, U+2029, or the literal marker terminator `}}`.
+
+The first literal `}}` closes a marker. Backslashes and quotes are ordinary characters: there
+is no extra escaping, decoding, case folding or Unicode normalization. Every `{{...}}` or
+`%{{...}}` is read as one unit before the interaction's `]`, option separators or Markdown can
+see its body. Only a leading `%{{...}}` after Python whitespace padding assigns a variable;
+markers in option content retain their exact literal source. An unclosed marker owns the
+remaining tail, so a `?[...]` inside it cannot become an independent interaction.
+The padding set includes U+0085 and U+001C–001F; U+FEFF is retained as part of a name.
+
+`escapeInteractionText(text)` escapes interaction operators outside variable markers and preserves
+marker source exactly. It does not close or escape an unmatched `{{`: that sequence still owns
+the remaining tail, so arbitrary text containing it cannot be embedded as a literal option with
+this helper. No additional brace-escaping syntax is introduced.
+
+```markdown
+What is your gender?
+?[%{{What is your gender?}} Male | Female | Prefer not to say]
+```
+
+The variable name is the answer's storage key; it does not add a visible question heading.
+Hosts can reuse the same grammar instead of maintaining their own identifier regex:
+
+```typescript
+import {
+  createVariableExpressionRegex,
+  extractVariableNames,
+  findDocumentVariableMarkers,
+  findVariableMarkers,
+  formatVariableAssignment,
+  formatVariableReference,
+  isValidVariableName,
+  normalizeVariableName,
+  readVariableMarker,
+  VARIABLE_NAME_SOURCE,
+  VARIABLE_REFERENCE_SOURCE,
+  VARIABLE_ASSIGNMENT_SOURCE,
+} from 'remark-flow';
+
+extractVariableNames('%{{What is your gender?}} {{What is your gender?}}'); // ['What is your gender?']
+findDocumentVariableMarkers('Show `{{` then {{ q }}').map(
+  marker => marker.name
+); // [null, 'q']
+normalizeVariableName(' What is your gender? '); // 'What is your gender?'
+isValidVariableName('has space'); // true
+createVariableExpressionRegex('gu'); // A fresh matcher; capture 1 is the trimmed name.
+formatVariableReference('question}'); // '{{ question} }}'
+formatVariableAssignment('Which [path] | level?'); // '%{{ Which [path] | level? }}'
+```
+
+`extractVariableNames` scans the supplied source in order, including code fences and comments,
+and returns each name once. It does not change the host's policy for which source to inspect.
+Complete markers inside code, HTML, math, angle URI/email links, or link-resource examples are still collected, while incomplete examples stay
+inside their closing literal boundary and cannot hide a later variable. This includes fence info
+strings, quote/list-contained fences, indented code that starts a block, reference-definition
+destinations and titles (including native container and lazy continuations), ordinary HTML blocks
+ending at a blank line or container boundary, and raw `script`, `style`, `pre`, or `textarea` blocks.
+Comments, processing instructions, declarations, and CDATA retain the whole physical closing line. Physical lines use
+LF, CRLF, or CR; other Unicode separators do not create Markdown line boundaries.
+Document interaction candidates stop at a blank line or native paragraph interruption outside an opaque marker. The raw
+interaction reader keeps its context-free behavior.
+Markdown-escaped opening
+braces do not start a document marker. The raw readers below do not interpret Markdown context.
+Use `findDocumentVariableMarkers(text)` when editors or document readers need marker ranges.
+It returns `{ start, end, rawName, name }` in source order, with original UTF-16 offsets suitable
+for `text.slice(start, end)`. It retains duplicates and invalid markers. Unclosed markers have
+`name: null` and end at their literal boundary, or at document EOF when outside a literal span.
+`extractVariableNames` uses these same ranges and returns only unique, non-null names.
+
+Use `findVariableMarkers` for raw token scanning: each raw marker is read only once, so a
+`{{` inside its body does not open another variable. `readVariableMarker(text, start)` reads
+only the marker at that position; both return `{ start, end, rawName, name }`, with `name: null`
+for invalid bodies. The existing regex factory and source constants match valid markers and
+keep capture 1 normalized; they are suitable for validating a complete token, while the scanner
+also claims invalid outer markers so their contents cannot become nested variables.
+Use `trimVariablePadding` for the shared linear-time edge trim; it preserves U+FEFF and long
+internal whitespace runs. Anchor regex sources when validating a complete token; Markdown document
+scanning uses the document reader rather than restarting a regex inside malformed input.
+Inline code openings cannot pair across a blank paragraph or a code-fence line. If a real marker
+starts after an unmatched opening, its body still stays opaque through the first literal `}}`.
+
+The formatters return `null` for invalid names and always add padding. That padding is needed
+when a name ends with a single `}`: `{{ question} }}` preserves `question}`, whereas
+`{{question}}}` closes earlier and names `question`.
+
+Tokenized trees preserve raw NUL provenance, so `parse` followed by `runSync` rejects invalid
+NUL-containing names even without passing the source again. Literal U+FFFD remains a valid key
+character. Token serialization also removes block quote and list prefixes from multiline markers.
+Block-looking text inside a multiline marker remains part of its name; a real enclosing code
+fence still keeps its contents literal. ATX and Setext headings retain their heading level, and
+surrounding prose retains its paragraph boundaries. Marker-looking text inside inline code, HTML,
+math, or link resources stays in that Markdown context.
+An external tree that already lost the distinction between NUL and U+FFFD cannot recover it.
 
 ## 📖 API Reference
 
@@ -399,7 +498,7 @@ function CustomMarkdownRenderer() {
   const content = `
   # Interactive Form
 
-  Choose language: ?[%{{lang}} English | 中文 | Español]
+  Choose language: ?[%{{lang}} English | Spanish | French]
   Your name: ?[%{{name}}...Enter your name]
   Action: ?[Submit//submit | Reset//reset]
   `;

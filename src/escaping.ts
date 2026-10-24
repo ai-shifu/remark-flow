@@ -23,6 +23,17 @@
  * parser to prove the meaning survived, and then this parser is what the browser reads it with.
  */
 
+import {
+  RAW_VARIABLE_MARKER_SOURCE,
+  readVariableMarker,
+} from './variable-marker';
+
+/** A raw marker is opaque even when invalid or incomplete; its operators are always literal. */
+const markerEnd = (text: string, index: number): number | null =>
+  text.startsWith('{{', index)
+    ? (readVariableMarker(text, index)?.end ?? text.length)
+    : null;
+
 /** The characters a backslash may make ordinary. `/` covers `//`, `.` covers `...`. */
 export const ESCAPABLE = '|/.]';
 
@@ -33,7 +44,10 @@ export const isEscape = (text: string, index: number): boolean =>
   ESCAPABLE.includes(text[index + 1]);
 
 /**
- * Make `text` safe to write inside `?[...]`, keeping every character it has.
+ * Escape interaction operators outside opaque variable markers.
+ *
+ * Marker source is preserved, including incomplete markers. This does not make an unmatched
+ * `{{` representable as literal option text: it still owns the remaining interaction tail.
  *
  * A dot is escaped only inside a run of three or more, because only `...` is a delimiter and a
  * single period ends most sentences: escaping every one turns `Yes, I agree.` into
@@ -51,6 +65,12 @@ export const escapeInteractionText = (text: string): string => {
   let out = '';
   let index = 0;
   while (index < text.length) {
+    const end = markerEnd(text, index);
+    if (end !== null) {
+      out += text.slice(index, end);
+      index = end;
+      continue;
+    }
     const char = text[index];
     if (char === '.') {
       let run = 0;
@@ -75,6 +95,12 @@ export const unescapeInteractionText = (text: string): string => {
   let out = '';
   let index = 0;
   while (index < text.length) {
+    const end = markerEnd(text, index);
+    if (end !== null) {
+      out += text.slice(index, end);
+      index = end;
+      continue;
+    }
     if (isEscape(text, index)) {
       out += text[index + 1];
       index += 2;
@@ -99,6 +125,11 @@ export const findUnescaped = (
 ): number => {
   let index = start;
   while (index < text.length) {
+    const end = markerEnd(text, index);
+    if (end !== null) {
+      index = end;
+      continue;
+    }
     if (isEscape(text, index)) {
       index += 2;
       continue;
@@ -132,6 +163,11 @@ export const splitOnSingleUnescapedPipe = (text: string): string[] => {
   let start = 0;
   let index = 0;
   while (index < text.length) {
+    const end = markerEnd(text, index);
+    if (end !== null) {
+      index = end;
+      continue;
+    }
     if (isEscape(text, index)) {
       index += 2;
       continue;
@@ -187,5 +223,70 @@ export const splitOnEllipsis = (content: string): [string, string] | null => {
  * then closing on the very bracket it escapes. Without that, this regex and a left-to-right
  * scanner disagree about `?[a\\]`, and two parsers of one grammar must not.
  */
-export const INTERACTION_CONTENT_SOURCE =
-  '(?:\\\\[|/.\\]]|\\\\(?![|/.\\]])|[^\\]\\\\])*';
+export const INTERACTION_CONTENT_SOURCE = `(?:${RAW_VARIABLE_MARKER_SOURCE}|\\\\[|/.\\]]|\\\\(?![|/.\\]])|\\{(?!\\{)|[^\\]\\\\{])*`;
+
+export interface InteractionSpan {
+  start: number;
+  end: number;
+  content: string;
+  complete: boolean;
+}
+
+/** Read one interaction without restarting inside a complete or unfinished raw marker. */
+const readInteractionWithin = (
+  text: string,
+  start: number,
+  boundary?: (index: number) => boolean
+): InteractionSpan | null => {
+  if (!text.startsWith('?[', start)) return null;
+  let index = start + 2;
+  while (index < text.length) {
+    if (text.startsWith('{{', index)) {
+      const marker = readVariableMarker(text, index);
+      if (!marker) break;
+      index = marker.end;
+      continue;
+    }
+    if (boundary?.(index)) {
+      return {
+        start,
+        end: index,
+        content: text.slice(start + 2, index),
+        complete: false,
+      };
+    }
+    if (isEscape(text, index)) {
+      index += 2;
+      continue;
+    }
+    if (text[index] === ']') {
+      if (text[index + 1] === '(') return null;
+      return {
+        start,
+        end: index + 1,
+        content: text.slice(start + 2, index),
+        complete: true,
+      };
+    }
+    index += 1;
+  }
+  return {
+    start,
+    end: text.length,
+    content: text.slice(start + 2),
+    complete: false,
+  };
+};
+
+/** Read the raw interaction grammar without imposing Markdown paragraph boundaries. */
+export const readInteraction = (
+  text: string,
+  start = 0
+): InteractionSpan | null => readInteractionWithin(text, start);
+
+/** @internal Bound document candidates without changing the raw interaction reader. */
+export const readDocumentInteraction = (
+  text: string,
+  start: number,
+  boundary: (index: number) => boolean
+): InteractionSpan | null => readInteractionWithin(text, start, boundary);

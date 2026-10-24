@@ -4,8 +4,13 @@ import {
   InteractionParser,
   type RemarkCompatibleResult,
 } from './interaction-parser';
-import { INTERACTION_CONTENT_SOURCE } from './escaping';
-import { INTERACTION_NODE, TOKENIZED_TREE } from './interaction-syntax';
+import { readInteraction } from './escaping';
+import {
+  INTERACTION_NODE,
+  VARIABLE_NODE,
+  TOKENIZED_TREE,
+} from './interaction-syntax';
+import { readVariableMarker, trimVariablePadding } from './variable-name';
 
 interface InteractionElementNode extends Node {
   data: {
@@ -46,26 +51,22 @@ function createSegments(
 /**
  * Parse `value` as one whole interaction, or return null if it should stay text.
  *
- * Invalid variable syntax is kept as text rather than misparsed: `%{variable}` with one brace,
- * or `%{{}}` with no name, would otherwise become display buttons.
+ * A leading assignment is validated after reading its whole body. Marker-looking text inside
+ * an opaque name or an option does not change whether the interaction is valid.
  */
 function parseWhole(
   value: string,
   parser: InteractionParser,
   warnLabel: string
 ): RemarkCompatibleResult | null {
-  const whole = new RegExp(`^\\?\\[(${INTERACTION_CONTENT_SOURCE})\\]$`).exec(
-    value
-  );
-  if (!whole) return null;
-  const innerContent = whole[1];
-  if (
-    innerContent.includes('%{') &&
-    (!innerContent.includes('%{{') || innerContent.includes('%{{}}'))
-  ) {
+  const span = readInteraction(value);
+  if (!span?.complete || span.end !== value.length) return null;
+  const innerContent = trimVariablePadding(span.content);
+  if (innerContent.startsWith('%{') && !innerContent.startsWith('%{{')) {
     return null;
   }
   try {
+    if (parser.parse(value).error) return null;
     return parser.parseToRemarkFormat(value);
   } catch (error) {
     console.warn(`Failed to parse ${warnLabel} syntax:`, error);
@@ -99,9 +100,21 @@ export function transformInteractionsInTree(
   if (rootData?.[TOKENIZED_TREE] === true) {
     visit(
       tree,
+      VARIABLE_NODE,
+      (node: Literal, index: number | null, parent: Parent | null) => {
+        if (index === null || parent === null) return;
+        parent.children.splice(index, 1, {
+          type: 'text',
+          value: node.value as string,
+        } as Literal);
+      }
+    );
+    visit(
+      tree,
       INTERACTION_NODE,
       (node: Literal, index: number | null, parent: Parent | null) => {
         if (index === null || parent === null) return;
+        // The tokenizer retains raw NUL provenance without reintroducing container prefixes.
         const value = node.value as string;
         const parsed = parseWhole(value, parser, warnLabel);
         parent.children.splice(
@@ -128,46 +141,45 @@ export function transformInteractionsInTree(
 
       const value = node.value as string;
 
-      // Check if contains interaction syntax
-      const interactionRegex = new RegExp(
-        `\\?\\[(${INTERACTION_CONTENT_SOURCE})\\](?!\\()`
-      );
-      const match = interactionRegex.exec(value);
-
-      if (match) {
-        const fullMatch = match[0];
-        const startIndex = match.index;
-        const endIndex = startIndex + fullMatch.length;
-
+      let cursor = 0;
+      while (cursor < value.length) {
+        if (value.startsWith('{{', cursor)) {
+          const marker = readVariableMarker(value, cursor);
+          if (!marker) return;
+          cursor = marker.end;
+          continue;
+        }
+        if (!value.startsWith('?[', cursor)) {
+          cursor += 1;
+          continue;
+        }
+        const span = readInteraction(value, cursor);
+        if (!span) {
+          cursor += 2;
+          continue;
+        }
+        if (!span.complete) return;
+        const fullMatch = value.slice(span.start, span.end);
         try {
-          // Check for invalid variable syntax: keep the original text
-          // instead of misparsing %{variable} / %{{}} as display buttons.
-          const innerContent = match[1];
-          if (innerContent.includes('%{')) {
-            if (!innerContent.includes('%{{')) {
-              // Contains invalid variable syntax %{variable} instead of %{{variable}}
-              return;
-            }
-            // Check for empty variable name %{{}}
-            if (innerContent.includes('%{{}}')) {
-              return;
-            }
+          const parsedResult = parseWhole(fullMatch, parser, warnLabel);
+          if (!parsedResult) {
+            cursor = span.end;
+            continue;
           }
-
-          const parsedResult = parser.parseToRemarkFormat(fullMatch);
-
           // Create AST segments
           const segments = createSegments(
             value,
-            startIndex,
-            endIndex,
+            span.start,
+            span.end,
             parsedResult,
             'custom-variable'
           );
           parent.children.splice(index, 1, ...segments);
+          return;
         } catch (error) {
           console.warn(`Failed to parse ${warnLabel} syntax:`, error);
           // Keep original if parsing fails
+          return;
         }
       }
     }
