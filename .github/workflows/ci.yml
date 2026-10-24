@@ -54,3 +54,50 @@ jobs:
         run: |
           node --test tests/pipeline/rendering-pipeline.test.mjs
           node --conditions=development --test tests/pipeline/rendering-pipeline.test.mjs
+
+  parser-compatibility:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        commonmark: ['2.0.3', '2.0.4']
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Select native parser compatibility version
+        env:
+          COMMONMARK_VERSION: ${{ matrix.commonmark }}
+        run: |
+          npm install --no-save --ignore-scripts "micromark-core-commonmark@$COMMONMARK_VERSION"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          import { createRequire } from 'node:module';
+          import { pathToFileURL } from 'node:url';
+
+          const remark = createRequire(import.meta.resolve('remark-parse'));
+          const markdown = createRequire(remark.resolve('mdast-util-from-markdown'));
+          const micromark = createRequire(markdown.resolve('micromark'));
+          const entry = micromark.resolve('micromark-core-commonmark');
+          const manifest = new URL('./package.json', pathToFileURL(entry));
+          const { version } = JSON.parse(readFileSync(manifest, 'utf8'));
+          assert.equal(version, process.env.COMMONMARK_VERSION);
+          console.log(`Native Markdown parser uses micromark-core-commonmark@${version}`);
+          NODE
+
+      - name: Build and verify rendering with the native parser
+        run: |
+          npm run build
+          node --test tests/pipeline/rendering-pipeline.test.mjs
+          node --conditions=development --test tests/pipeline/rendering-pipeline.test.mjs

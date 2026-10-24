@@ -892,8 +892,12 @@ function tokenizeOpaqueBlock(
     if (!labelEnd || !closingLabel) return no;
     // The native label-end tokenizer owns resource destinations and titles. Its
     // matching opening is tracked here because flow has not tokenized inline labels yet.
+    // Older tokenizers read events; newer ones mutate a label-start stack. Keep
+    // both representations local so speculative checks cannot change parser state.
+    const labelStart = { ...closingLabel };
     const nativeContext = Object.create(this, {
-      events: { value: [['enter', closingLabel]] },
+      events: { value: [['enter', labelStart]] },
+      _labelStarts: { value: [labelStart] },
     });
     return nativeSpan.call(nativeContext, labelEnd, 'resource', check, yes, no);
   }

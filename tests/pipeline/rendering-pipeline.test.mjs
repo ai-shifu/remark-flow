@@ -1025,6 +1025,60 @@ test('HTML-looking link titles do not extend lookahead into a later Markdown blo
   }
 });
 
+test('native link probes isolate label state across failed resources and repeated parses', () => {
+  const sources = [
+    '[one](url "{{") [two](url "{{")\n\n# Heading',
+    '[bad](url invalid) [good](url "{{")\n\n# Heading',
+    '![image](url "{{") [good](url "{{")\n\n# Heading',
+    '[ref]: url "{{"\n\n[ref] [good](url "{{")\n\n# Heading',
+  ];
+  const containers = [
+    value => value,
+    value =>
+      value
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n'),
+    value =>
+      value
+        .split('\n')
+        .map((line, index) => `${index ? '  ' : '- '}${line}`)
+        .join('\n'),
+  ];
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    const processor = unified()
+      .use(remarkParse)
+      .use(remarkGfm)
+      .use(remarkMath)
+      .use(plugin)
+      .use(remarkBreaks)
+      .freeze();
+    for (const current of [processor, processor()]) {
+      const run = source => current.runSync(current.parse(source), source);
+      for (const source of sources) {
+        for (const wrap of containers) {
+          for (const eol of ['\n', '\r\n', '\r']) {
+            const markdown = wrap(source).replaceAll('\n', eol);
+            const native = unified()
+              .use(remarkParse)
+              .use(remarkGfm)
+              .use(remarkMath)
+              .use(remarkBreaks);
+            const expected = native.runSync(
+              native.parse(markdown),
+              markdown
+            ).children;
+            assert.deepEqual(run(markdown).children, expected, markdown);
+            assert.deepEqual(run(markdown).children, expected, markdown);
+            const question = `${markdown}${eol}${eol}?[%{{ answer }} A|B]`;
+            assert.equal(interactions(run(question))[0].variableName, 'answer');
+          }
+        }
+      }
+    }
+  }
+});
+
 test('native math and link resources keep marker examples within their inline context', () => {
   const containers = [
     value => value,
