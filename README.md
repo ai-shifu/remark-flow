@@ -185,9 +185,11 @@ Cc control characters, U+2028, U+2029, or the literal marker terminator `}}`.
 The first literal `}}` closes a marker. Backslashes and quotes are ordinary characters: there
 is no extra escaping, decoding, case folding or Unicode normalization. Every `{{...}}` or
 `%{{...}}` is read as one unit before the interaction's `]`, option separators or Markdown can
-see its body. Only a leading `%{{...}}` after Python whitespace padding assigns a variable;
+see its body. A leading `%{{...}}` or `{{...}}` after Python whitespace padding assigns a variable;
 markers in option content retain their exact literal source. An unclosed marker owns the
 remaining tail, so a `?[...]` inside it cannot become an independent interaction.
+For example, `?[%{{theme}} Light | Dark]` and `?[{{theme}} Light | Dark]` produce the same
+`variableName` and controls. Outside interactions, `{{theme}}` remains a variable reference.
 The padding set includes U+0085 and U+001C–001F; U+FEFF is retained as part of a name.
 
 `escapeInteractionText(text)` escapes interaction operators outside variable markers and preserves

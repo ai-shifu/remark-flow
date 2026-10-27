@@ -300,9 +300,9 @@ const interactionPattern = new RegExp(
 #### Layer 2: Variable Detection
 
 ```typescript
-import { VARIABLE_ASSIGNMENT_SOURCE } from './src/variable-name';
+import { COMPILED_REGEXES } from './src/interaction-parser';
 
-const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
+const variablePattern = COMPILED_REGEXES.LAYER2_VARIABLE;
 ```
 
 - **Variable names support**: Nonempty opaque Unicode text after trimming the established Python
@@ -317,7 +317,8 @@ const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
 - **Example**: `%{{username}}`, `%{{café preference}}`, `%{{What is your gender?}}`
 - Every `{{...}}` / `%{{...}}` is opaque to the interaction's `]`, option delimiters and
   Markdown, including incomplete markers whose remaining tail stays literal. Only a leading
-  `%{{...}}` after Python whitespace padding assigns a variable; body markers retain raw source.
+  `%{{...}}` or `{{...}}` after Python whitespace padding assigns a variable; body markers retain raw source.
+  This equivalence is local to interactions; document-level references retain their existing meaning.
 - Use `trimVariablePadding` for the shared linear-time edge trim. Do not introduce regex suffix
   trimming that repeatedly scans long internal whitespace runs, or use JS `String.trim()`.
 - Use the formatters' padding to preserve names ending with one `}`; do not add decoding or

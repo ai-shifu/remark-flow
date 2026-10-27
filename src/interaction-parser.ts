@@ -20,7 +20,7 @@ import {
   normalizeVariableName,
   readVariableMarker,
   trimVariablePadding,
-  VARIABLE_ASSIGNMENT_SOURCE,
+  VARIABLE_REFERENCE_SOURCE,
   VARIABLE_PADDING_SOURCE,
 } from './variable-name';
 
@@ -44,9 +44,10 @@ export const COMPILED_REGEXES = {
   ),
 
   // Names use the teaching engine's grammar; only the content after the marker is split into
-  // choices, display/value pairs or a text input. Punctuation inside the name is ordinary text.
+  // choices, display/value pairs or a text input. The leading assignment accepts either marker
+  // spelling inside an interaction; document references retain their own semantics.
   LAYER2_VARIABLE: new RegExp(
-    `^${VARIABLE_PADDING_SOURCE}${VARIABLE_ASSIGNMENT_SOURCE}([\\s\\S]*)$`
+    `^${VARIABLE_PADDING_SOURCE}%?${VARIABLE_REFERENCE_SOURCE}([\\s\\S]*)$`
   ),
 
   // Layer 3: Split content before and after ...
@@ -249,12 +250,13 @@ export class InteractionParser {
     innerContent: string
   ): [boolean, string | null, string] {
     innerContent = trimVariablePadding(innerContent);
-    if (!innerContent.startsWith('%{{')) {
+    const markerStart = innerContent.startsWith('%') ? 1 : 0;
+    if (!innerContent.startsWith('{{', markerStart)) {
       // No variable, entire content used for display button parsing
       return [false, null, innerContent];
     }
 
-    const marker = readVariableMarker(innerContent, 1);
+    const marker = readVariableMarker(innerContent, markerStart);
     if (!marker) return [true, null, innerContent];
     const variableName = normalizeVariableName(marker.rawName);
     const remainingContent = trimVariablePadding(
