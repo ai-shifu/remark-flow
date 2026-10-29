@@ -378,10 +378,13 @@ test('both leading marker spellings render named text and mixed controls in ever
         interactions(render(`\`?[${prefix}{{answer}} A | B]\``, plugin)).length,
         0
       );
-      assert.equal(
-        only(`?[Show ${prefix}{{answer}} | Next]`, plugin).variableName,
-        undefined
-      );
+      const nonleading = only(`?[Show ${prefix}{{answer}} | Next]`, plugin);
+      assert.equal(nonleading.variableName, undefined);
+      assert.deepEqual(nonleading.buttonTexts, [
+        `Show ${prefix}{{answer}}`,
+        'Next',
+      ]);
+      assert.deepEqual(nonleading.buttonValues, nonleading.buttonTexts);
     }
     assert.equal(interactions(render('{{answer}}', plugin)).length, 0);
   }
