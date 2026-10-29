@@ -1,0 +1,8 @@
+{
+  "name": "@remark-flow/deepmerge",
+  "version": "4.3.1-patched.0",
+  "private": true,
+  "description": "Local security fork of deepmerge 4.3.1 for development tooling",
+  "main": "index.js",
+  "license": "MIT"
+}

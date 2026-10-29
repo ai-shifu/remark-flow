@@ -44,6 +44,9 @@ jobs:
       - name: Test with coverage
         run: npm run test:coverage
 
+      - name: Dependency security regressions
+        run: npm run test:security
+
       - name: Build
         run: npm run build
 
