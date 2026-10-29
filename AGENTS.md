@@ -84,7 +84,7 @@ tests/                         # Comprehensive test suite
 ### Key Features
 
 - **Button syntax**: `?[Button Text]` → interactive button data
-- **Variable inputs**: `?[%{{name}} options]` → form field data
+- **Variable inputs**: `?[{{name}} options]` → form field data
 - **Custom values**: `?[Display//value]` → separate display/value pairs
 - **Single-select**: `?[Yes | No | Maybe]` → single choice button options
 - **Multi-select**: `?[React||Vue||Angular]` → multiple choice button options
@@ -109,7 +109,7 @@ src/
 
 - **Main Plugin (`remark-flow.ts`)**: The default export plugin that handles all `?[...]` transformations
 - **Parser (`interaction-parser.ts`)**: Core logic for parsing various syntax patterns
-- **Variable Handler (`remark-custom-variable.ts`)**: Processes variable syntax like `%{{name}}`
+- **Variable Handler (`remark-custom-variable.ts`)**: Processes named interactions such as `?[{{name}} ...]`
 - **Interaction Handler (`remark-interaction.ts`)**: Alternative syntax processor
 - **Index (`index.ts`)**: Exports and type definitions
 
@@ -186,7 +186,7 @@ describe('syntax pattern group', () => {
   });
 
   test('handles unicode content', () => {
-    const input = 'Choose: ?[%{{café theme}} Light//light | Dark//dark]';
+    const input = 'Choose: ?[{{café theme}} Light//light | Dark//dark]';
     // Test Unicode variable names and content
   });
 
@@ -232,33 +232,33 @@ const TEST_CASES = {
   multiCustomValues: '?[Frontend//fe||Backend//be||Fullstack//fs]',
 
   // Variable assignments
-  textInput: '?[%{{username}}...Enter your name]',
-  singleButtonSelect: '?[%{{theme}} Light | Dark]',
-  multiButtonSelect: '?[%{{skills}} React||Vue||Angular]',
-  singleCombined: '?[%{{size}} Small//S | Medium//M | ...custom]',
-  multiCombined: '?[%{{tags}} React||Vue||Angular||...Other framework]',
+  textInput: '?[{{username}}...Enter your name]',
+  singleButtonSelect: '?[{{theme}} Light | Dark]',
+  multiButtonSelect: '?[{{skills}} React||Vue||Angular]',
+  singleCombined: '?[{{size}} Small//S | Medium//M | ...custom]',
+  multiCombined: '?[{{tags}} React||Vue||Angular||...Other framework]',
 
   // Unicode and i18n
-  accented: '?[%{{café preference}}...How do you like your coffee?]',
-  accentedMulti: '?[%{{résumé skills}} Frontend||Backend||Full stack]',
+  accented: '?[{{café preference}}...How do you like your coffee?]',
+  accentedMulti: '?[{{résumé skills}} Frontend||Backend||Full stack]',
   emoji: '?[👍 Good | 👎 Bad | 🤔 Unsure]',
   emojiMulti: '?[😊 Happy||😢 Sad||😡 Angry]',
-  mixed: '?[%{{language 🌍}} English//en | Spanish//es | French//fr]',
+  mixed: '?[{{language 🌍}} English//en | Spanish//es | French//fr]',
 
   // Separator priority tests
-  singleFirst: '?[%{{opt}} A | B||C]', // Single-select: ["A", "B||C"]
-  multiFirst: '?[%{{opt}} A||B | C]', // Multi-select: ["A", "B | C"]
+  singleFirst: '?[{{opt}} A | B||C]', // Single-select: ["A", "B||C"]
+  multiFirst: '?[{{opt}} A||B | C]', // Multi-select: ["A", "B | C"]
 
   // Edge cases
   empty: '?[]',
   whitespace: '?[   ]',
   malformed: '?[incomplete',
   nested: '?[Button [with brackets]]',
-  emptyMulti: '?[%{{empty}} ||]',
+  emptyMulti: '?[{{empty}} ||]',
 
   // Performance test data
   largeSingle: '?[' + 'Option|'.repeat(1000) + 'Final]',
-  largeMulti: '?[%{{many}} ' + 'Option||'.repeat(100) + 'Final]',
+  largeMulti: '?[{{many}} ' + 'Option||'.repeat(100) + 'Final]',
 };
 ```
 
@@ -300,9 +300,9 @@ const interactionPattern = new RegExp(
 #### Layer 2: Variable Detection
 
 ```typescript
-import { VARIABLE_ASSIGNMENT_SOURCE } from './src/variable-name';
+import { COMPILED_REGEXES } from './src/interaction-parser';
 
-const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
+const variablePattern = COMPILED_REGEXES.LAYER2_VARIABLE;
 ```
 
 - **Variable names support**: Nonempty opaque Unicode text after trimming the established Python
@@ -314,10 +314,14 @@ const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
   `findVariableMarkers` only for raw token scanning: each marker is claimed once through its
   first literal `}}`, including invalid bodies and inner `{{`, without document context.
 - Padding means Python's set, not JavaScript's `\s` or `String.trim()`; U+FEFF remains in keys.
-- **Example**: `%{{username}}`, `%{{café preference}}`, `%{{What is your gender?}}`
-- Every `{{...}}` / `%{{...}}` is opaque to the interaction's `]`, option delimiters and
+- **Example**: `{{username}}`, `{{café preference}}`, `{{What is your gender?}}`
+- Every `{{...}}` is opaque to the interaction's `]`, option delimiters and
   Markdown, including incomplete markers whose remaining tail stays literal. Only a leading
-  `%{{...}}` after Python whitespace padding assigns a variable; body markers retain raw source.
+  `{{...}}` after Python whitespace padding binds the answer to that variable; body markers retain raw source.
+  Document-level references retain their existing meaning.
+- Use percent-free bindings in documentation, examples and new content. Keep the legacy
+  percent-prefixed form only as transition compatibility, with focused regression coverage.
+  Existing declaration helpers retain their public behavior; do not remove compatibility here.
 - Use `trimVariablePadding` for the shared linear-time edge trim. Do not introduce regex suffix
   trimming that repeatedly scans long internal whitespace runs, or use JS `String.trim()`.
 - Use the formatters' padding to preserve names ending with one `}`; do not add decoding or
@@ -342,23 +346,23 @@ const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
 3. **Variable Text Input**
 
    ```markdown
-   ?[%{{username}}...Enter your name] # Pure text input
-   ?[%{{age}}...How old are you?] # With question prompt
-   ?[%{{comment}}...] # Empty prompt
+   ?[{{username}}...Enter your name] # Pure text input
+   ?[{{age}}...How old are you?] # With question prompt
+   ?[{{comment}}...] # Empty prompt
    ```
 
 4. **Variable Button Selection (Single-Select)**
 
    ```markdown
-   ?[%{{theme}} Light | Dark] # Single-select button group
-   ?[%{{size}} S//Small | M//Medium | L//Large] # With custom values
+   ?[{{theme}} Light | Dark] # Single-select button group
+   ?[{{size}} S//Small | M//Medium | L//Large] # With custom values
    ```
 
 5. **Variable Button Selection (Multi-Select)**
 
    ```markdown
-   ?[%{{skills}} JavaScript||TypeScript||Python] # Multi-select button group
-   ?[%{{lang}} JS//JavaScript||TS//TypeScript||PY//Python] # With custom values
+   ?[{{skills}} JavaScript||TypeScript||Python] # Multi-select button group
+   ?[{{lang}} JS//JavaScript||TS//TypeScript||PY//Python] # With custom values
    ```
 
 6. **Combined: Buttons + Text Input**
@@ -366,11 +370,11 @@ const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
    ```markdown
    # Single-select with text input
 
-   ?[%{{size}} Small//S | Medium//M | Large//L | ...custom size]
+   ?[{{size}} Small//S | Medium//M | Large//L | ...custom size]
 
    # Multi-select with text input
 
-   ?[%{{tags}} React||Vue||Angular||...Other framework]
+   ?[{{tags}} React||Vue||Angular||...Other framework]
    ```
 
    - Single-select: Small(S), Medium(M), Large(L) + text input
@@ -390,8 +394,8 @@ const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
    **Examples**:
 
    ```markdown
-   ?[%{{opt}} A | B||C] # Single-select: ["A", "B||C"]
-   ?[%{{opt}} A||B | C] # Multi-select: ["A", "B | C"]
+   ?[{{opt}} A | B||C] # Single-select: ["A", "B||C"]
+   ?[{{opt}} A||B | C] # Multi-select: ["A", "B | C"]
    ```
 
 2. **Button Value Format**
@@ -403,11 +407,11 @@ const variablePattern = new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`);
    - Must be nonempty after trimming surrounding marker whitespace
    - May contain ordinary spaces and single braces; preserve all internal characters as written
    - Cannot contain Unicode Cc controls, U+2028, U+2029 or the literal terminator `}}`
-   - Case sensitive: `%{{userName}}` ≠ `%{{username}}`
+   - Case sensitive: `{{userName}}` ≠ `{{username}}`
 
 4. **Unicode Support**
    - Full Unicode support in all text fields
-   - Unicode variable names: `%{{café preference}}`
+   - Unicode variable names: `{{café preference}}`
    - Emoji support: `?[👍 Good | 👎 Bad]`
 
 ### Plugin Implementation Standards
@@ -439,7 +443,7 @@ Custom nodes must follow this structure:
 interface CustomVariableNode extends Node {
   type: 'custom-variable';
   data: {
-    variableName?: string; // For %{{name}} syntax
+    variableName?: string; // Named answer key from a leading {{name}} binding
     buttonTexts?: string[]; // Button display text
     buttonValues?: string[]; // Button values (may differ from display)
     placeholder?: string; // Text input placeholder
@@ -456,10 +460,10 @@ The interaction parser handles these syntax patterns:
 2. **Custom values**: `?[Display Text//actual-value]`
 3. **Single-select choice**: `?[Option1 | Option2 | Option3]`
 4. **Multi-select choice**: `?[Option1||Option2||Option3]`
-5. **Variables**: `?[%{{variableName}} options...]`
-6. **Text input**: `?[%{{name}} ...placeholder text]`
-7. **Single-select combined**: `?[%{{name}} Button1//val1 | Button2//val2 | ...placeholder]`
-8. **Multi-select combined**: `?[%{{name}} Button1//val1||Button2//val2||...placeholder]`
+5. **Variables**: `?[{{variableName}} options...]`
+6. **Text input**: `?[{{name}} ...placeholder text]`
+7. **Single-select combined**: `?[{{name}} Button1//val1 | Button2//val2 | ...placeholder]`
+8. **Multi-select combined**: `?[{{name}} Button1//val1||Button2//val2||...placeholder]`
 
 ### Error Handling Standards (CRITICAL)
 
@@ -516,7 +520,7 @@ function badParseFunction(content: string) {
 3. **Invalid Variable Names**
 
    ```typescript
-   // Input: '?[%{{line\nbreak}}...]'
+   // Input: '?[{{line\nbreak}}...]'
    // Output: Invalid assignment kept as text; no variableName
    // MUST NOT: Attempt to process as variable
    ```
@@ -544,7 +548,7 @@ function badParseFunction(content: string) {
 // ✅ EFFICIENT: Reuse compiled regex patterns
 const COMPILED_PATTERNS = {
   interaction: new RegExp(`\\?\\[(${INTERACTION_CONTENT_SOURCE})\\]`, 'g'),
-  variable: new RegExp(VARIABLE_ASSIGNMENT_SOURCE),
+  variable: COMPILED_REGEXES.LAYER2_VARIABLE,
   // Pre-compile all patterns at module level
 };
 
@@ -747,7 +751,7 @@ const INTERACTION_PATTERN = new RegExp(
   `\\?\\[(${INTERACTION_CONTENT_SOURCE})\\]`,
   'g'
 );
-const VARIABLE_PATTERN = new RegExp(VARIABLE_ASSIGNMENT_SOURCE);
+const VARIABLE_PATTERN = COMPILED_REGEXES.LAYER2_VARIABLE;
 
 // Cache compiled patterns
 const patterns = {
@@ -889,7 +893,7 @@ node -e "const r=require('remark');const p=require('./dist/index.js').default;co
 #### Parser-Specific Debugging
 
 ```typescript
-import { VARIABLE_ASSIGNMENT_SOURCE } from './src/variable-name';
+import { COMPILED_REGEXES } from './src/interaction-parser';
 import { INTERACTION_CONTENT_SOURCE } from './src/escaping';
 
 // Enable debug mode in interaction parser
@@ -911,7 +915,7 @@ console.log(
 );
 console.log(
   'Variable pattern match:',
-  new RegExp(`^${VARIABLE_ASSIGNMENT_SOURCE}(.*)$`).exec('%{{test}} content')
+  COMPILED_REGEXES.LAYER2_VARIABLE.exec('{{test}} content')
 );
 ```
 
@@ -948,7 +952,7 @@ const processor = remark().use(remarkFlow)
 const markdown = `
 # Test Document
 Choose your option: ?[Option A | Option B | Option C]
-Enter name: ?[%{{username}}...Your name here]
+Enter name: ?[{{username}}...Your name here]
 `
 
 const result = processor.processSync(markdown)
@@ -1019,7 +1023,7 @@ const processor = unified()
   .use(remarkStringify);
 
 const markdown = `
-Select theme: ?[%{{theme}} Light//light | Dark//dark | ...custom]
+Select theme: ?[{{theme}} Light//light | Dark//dark | ...custom]
 `;
 
 const result = processor.processSync(markdown);

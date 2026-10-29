@@ -38,8 +38,8 @@ const markdown = `
 # Welcome to Interactive Content!
 
 Choose one option: ?[Option A | Option B | Option C]
-Choose multiple skills: ?[%{{skills}} JavaScript||TypeScript||Python]
-Enter your name: ?[%{{username}}...Please enter your name]
+Choose multiple skills: ?[{{skills}} JavaScript||TypeScript||Python]
+Enter your name: ?[{{username}}...Please enter your name]
 `;
 
 const result = processor.processSync(markdown);
@@ -60,7 +60,7 @@ const processor = unified()
   .use(remarkStringify);
 
 const result = processor.processSync(`
-Select theme: ?[%{{theme}} Light//light | Dark//dark | ...custom]
+Select theme: ?[{{theme}} Light//light | Dark//dark | ...custom]
 Action: ?[Save Changes//save | Cancel//cancel]
 `);
 ```
@@ -98,10 +98,12 @@ Buttons without a variable also support multi-select (`||`) and the `...` text-i
 
 ### 3. Variable Text Input
 
+A leading `{{name}}` inside `?[...]` binds the answer to that variable.
+
 ```markdown
-?[%{{username}}...Enter your name]
-?[%{{age}}...How old are you?]
-?[%{{comment}}...]
+?[{{username}}...Enter your name]
+?[{{age}}...How old are you?]
+?[{{comment}}...]
 ```
 
 **Output:** `{ variableName: "username", placeholder: "Enter your name" }`
@@ -109,8 +111,8 @@ Buttons without a variable also support multi-select (`||`) and the `...` text-i
 ### 4. Variable Button Selection (Single-Select)
 
 ```markdown
-?[%{{theme}} Light | Dark]
-?[%{{size}} Small//S | Medium//M | Large//L]
+?[{{theme}} Light | Dark]
+?[{{size}} Small//S | Medium//M | Large//L]
 ```
 
 **Output:** `{ variableName: "theme", buttonTexts: ["Light", "Dark"], buttonValues: ["Light", "Dark"], isMultiSelect: false }`
@@ -118,8 +120,8 @@ Buttons without a variable also support multi-select (`||`) and the `...` text-i
 ### 5. Variable Button Selection (Multi-Select)
 
 ```markdown
-?[%{{skills}} JavaScript||TypeScript||Python]
-?[%{{lang}} JS//JavaScript||TS//TypeScript||PY//Python]
+?[{{skills}} JavaScript||TypeScript||Python]
+?[{{lang}} JS//JavaScript||TS//TypeScript||PY//Python]
 ```
 
 **Output:** `{ variableName: "skills", buttonTexts: ["JavaScript", "TypeScript", "Python"], buttonValues: ["JavaScript", "TypeScript", "Python"], isMultiSelect: true }`
@@ -129,11 +131,11 @@ Buttons without a variable also support multi-select (`||`) and the `...` text-i
 ```markdown
 # Single-select with text input
 
-?[%{{size}} Small//S | Medium//M | Large//L | ...custom size]
+?[{{size}} Small//S | Medium//M | Large//L | ...custom size]
 
 # Multi-select with text input
 
-?[%{{tags}} React||Vue||Angular||...Other framework]
+?[{{tags}} React||Vue||Angular||...Other framework]
 ```
 
 **Output:**
@@ -154,11 +156,11 @@ The first separator type encountered determines the parsing mode:
 ```markdown
 # Single-select mode (| appears first)
 
-?[%{{option}} A | B||C] # Results in: ["A", "B||C"]
+?[{{option}} A | B||C] # Results in: ["A", "B||C"]
 
 # Multi-select mode (|| appears first)
 
-?[%{{option}} A||B | C] # Results in: ["A", "B | C"]
+?[{{option}} A||B | C] # Results in: ["A", "B | C"]
 ```
 
 **Key Points:**
@@ -170,8 +172,8 @@ The first separator type encountered determines the parsing mode:
 ### 8. Unicode & International Support
 
 ```markdown
-?[%{{language}} English//en | Spanish//es | French//fr]
-?[%{{café preference}}...How do you like your coffee?]
+?[{{language}} English//en | Spanish//es | French//fr]
+?[{{café preference}}...How do you like your coffee?]
 ?[👍 Good | 👎 Bad | 🤔 Unsure]
 ```
 
@@ -183,11 +185,13 @@ at both ends. Internal ordinary spaces, punctuation, emoji, single braces, `[` a
 Cc control characters, U+2028, U+2029, or the literal marker terminator `}}`.
 
 The first literal `}}` closes a marker. Backslashes and quotes are ordinary characters: there
-is no extra escaping, decoding, case folding or Unicode normalization. Every `{{...}}` or
-`%{{...}}` is read as one unit before the interaction's `]`, option separators or Markdown can
-see its body. Only a leading `%{{...}}` after Python whitespace padding assigns a variable;
+is no extra escaping, decoding, case folding or Unicode normalization. Every `{{...}}`
+is read as one unit before the interaction's `]`, option separators or Markdown can
+see its body. A leading `{{...}}` after Python whitespace padding assigns a variable;
 markers in option content retain their exact literal source. An unclosed marker owns the
 remaining tail, so a `?[...]` inside it cannot become an independent interaction.
+For example, `?[{{theme}} Light | Dark]` binds the answer to `theme`.
+Outside interactions, `{{theme}}` remains a variable reference.
 The padding set includes U+0085 and U+001C–001F; U+FEFF is retained as part of a name.
 
 `escapeInteractionText(text)` escapes interaction operators outside variable markers and preserves
@@ -197,7 +201,7 @@ this helper. No additional brace-escaping syntax is introduced.
 
 ```markdown
 What is your gender?
-?[%{{What is your gender?}} Male | Female | Prefer not to say]
+?[{{What is your gender?}} Male | Female | Prefer not to say]
 ```
 
 The variable name is the answer's storage key; it does not add a visible question heading.
@@ -209,17 +213,17 @@ import {
   extractVariableNames,
   findDocumentVariableMarkers,
   findVariableMarkers,
-  formatVariableAssignment,
   formatVariableReference,
   isValidVariableName,
   normalizeVariableName,
   readVariableMarker,
   VARIABLE_NAME_SOURCE,
   VARIABLE_REFERENCE_SOURCE,
-  VARIABLE_ASSIGNMENT_SOURCE,
 } from 'remark-flow';
 
-extractVariableNames('%{{What is your gender?}} {{What is your gender?}}'); // ['What is your gender?']
+extractVariableNames(
+  '?[{{What is your gender?}} Male | Female] {{What is your gender?}}'
+); // ['What is your gender?']
 findDocumentVariableMarkers('Show `{{` then {{ q }}').map(
   marker => marker.name
 ); // [null, 'q']
@@ -227,7 +231,6 @@ normalizeVariableName(' What is your gender? '); // 'What is your gender?'
 isValidVariableName('has space'); // true
 createVariableExpressionRegex('gu'); // A fresh matcher; capture 1 is the trimmed name.
 formatVariableReference('question}'); // '{{ question} }}'
-formatVariableAssignment('Which [path] | level?'); // '%{{ Which [path] | level? }}'
 ```
 
 `extractVariableNames` scans the supplied source in order, including code fences and comments,
@@ -261,7 +264,7 @@ scanning uses the document reader rather than restarting a regex inside malforme
 Inline code openings cannot pair across a blank paragraph or a code-fence line. If a real marker
 starts after an unmatched opening, its body still stays opaque through the first literal `}}`.
 
-The formatters return `null` for invalid names and always add padding. That padding is needed
+The formatter returns `null` for invalid names and always adds padding. That padding is needed
 when a name ends with a single `}`: `{{ question} }}` preserves `question}`, whereas
 `{{question}}}` closes earlier and names `question`.
 
@@ -273,6 +276,12 @@ fence still keeps its contents literal. ATX and Setext headings retain their hea
 surrounding prose retains its paragraph boundaries. Marker-looking text inside inline code, HTML,
 math, or link resources stays in that Markdown context.
 An external tree that already lost the distinction between NUL and U+FFFD cannot recover it.
+
+### Legacy compatibility
+
+The legacy `?[%{{name}} ...]` form remains accepted for existing content during the transition.
+Use `?[{{name}} ...]` for new content. Existing `formatVariableAssignment` and
+`VARIABLE_ASSIGNMENT_SOURCE` APIs retain their percent-prefixed output and matching behavior.
 
 ## 📖 API Reference
 
@@ -300,7 +309,7 @@ All plugins transform `?[...]` syntax into `custom-variable` AST nodes:
 interface CustomVariableNode extends Node {
   type: 'custom-variable';
   data: {
-    variableName?: string; // For %{{name}} syntax
+    variableName?: string; // Named answer key from a leading {{name}} binding
     buttonTexts?: string[]; // Button display text
     buttonValues?: string[]; // Corresponding button values
     placeholder?: string; // Text input placeholder
@@ -316,10 +325,10 @@ import { createInteractionParser, InteractionType } from 'remark-flow';
 const parser = createInteractionParser();
 
 // Parse content and get detailed result
-const result = parser.parse('?[%{{theme}} Light | Dark]');
+const result = parser.parse('?[{{theme}} Light | Dark]');
 
 // Parse and convert to remark-compatible format
-const remarkData = parser.parseToRemarkFormat('?[%{{theme}} Light | Dark]');
+const remarkData = parser.parseToRemarkFormat('?[{{theme}} Light | Dark]');
 ```
 
 ## 🔗 Usage Examples
@@ -346,8 +355,8 @@ const processor = remark().use(remarkFlow);
 const markdown = `
 # Choose Your Preferences
 
-Select language: ?[%{{language}} JavaScript | Python | TypeScript | Go]
-Enter your name: ?[%{{username}}...Your full name]
+Select language: ?[{{language}} JavaScript | Python | TypeScript | Go]
+Enter your name: ?[{{username}}...Your full name]
 Action: ?[Save//save | Cancel//cancel]
 `;
 
@@ -498,8 +507,8 @@ function CustomMarkdownRenderer() {
   const content = `
   # Interactive Form
 
-  Choose language: ?[%{{lang}} English | Spanish | French]
-  Your name: ?[%{{name}}...Enter your name]
+  Choose language: ?[{{lang}} English | Spanish | French]
+  Your name: ?[{{name}}...Enter your name]
   Action: ?[Submit//submit | Reset//reset]
   `;
 
@@ -511,6 +520,9 @@ function CustomMarkdownRenderer() {
 
 For a complete React component library with ready-to-use interactive components, use [markdown-flow-ui](https://github.com/ai-shifu/markdown-flow-ui).
 
+These examples require a UI release that bundles remark-flow 1.4.2 or later. Installing a newer
+remark-flow separately does not replace an older UI package's bundled parser.
+
 #### Basic Integration
 
 ```typescript
@@ -520,8 +532,8 @@ function InteractiveChat() {
   const content = `
   # Welcome! 👋
 
-  Select your preference: ?[%{{language}} JavaScript | Python | TypeScript]
-  Enter your name: ?[%{{username}}...Your full name]
+  Select your preference: ?[{{language}} JavaScript | Python | TypeScript]
+  Enter your name: ?[{{username}}...Your full name]
   Ready to start: ?[Let's Go!//start]
   `;
 

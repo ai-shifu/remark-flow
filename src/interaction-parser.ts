@@ -20,17 +20,17 @@ import {
   normalizeVariableName,
   readVariableMarker,
   trimVariablePadding,
-  VARIABLE_ASSIGNMENT_SOURCE,
+  VARIABLE_REFERENCE_SOURCE,
   VARIABLE_PADDING_SOURCE,
 } from './variable-name';
 
 // Interaction input type enumeration
 export enum InteractionType {
-  TEXT_ONLY = 'text_only', // Pure text input: ?[%{{var}}...question]
-  BUTTONS_ONLY = 'buttons_only', // Pure button group: ?[%{{var}} option1|option2]
-  BUTTONS_WITH_TEXT = 'buttons_with_text', // Button group + text: ?[%{{var}} option1|option2|...question]
-  BUTTONS_MULTI_SELECT = 'buttons_multi_select', // Multi-select buttons: ?[%{{var}} A||B]
-  BUTTONS_MULTI_WITH_TEXT = 'buttons_multi_with_text', // Multi-select + text: ?[%{{var}} A||B||...question]
+  TEXT_ONLY = 'text_only', // Pure text input: ?[{{var}}...question]
+  BUTTONS_ONLY = 'buttons_only', // Pure button group: ?[{{var}} option1|option2]
+  BUTTONS_WITH_TEXT = 'buttons_with_text', // Button group + text: ?[{{var}} option1|option2|...question]
+  BUTTONS_MULTI_SELECT = 'buttons_multi_select', // Multi-select buttons: ?[{{var}} A||B]
+  BUTTONS_MULTI_WITH_TEXT = 'buttons_multi_with_text', // Multi-select + text: ?[{{var}} A||B||...question]
   NON_ASSIGNMENT_BUTTON = 'non_assignment_button', // Non-assignment button: ?[Continue] or ?[Continue|Cancel]
 }
 
@@ -44,9 +44,10 @@ export const COMPILED_REGEXES = {
   ),
 
   // Names use the teaching engine's grammar; only the content after the marker is split into
-  // choices, display/value pairs or a text input. Punctuation inside the name is ordinary text.
+  // choices, display/value pairs or a text input. A leading {{name}} binds the answer;
+  // the percent prefix is retained for legacy content only.
   LAYER2_VARIABLE: new RegExp(
-    `^${VARIABLE_PADDING_SOURCE}${VARIABLE_ASSIGNMENT_SOURCE}([\\s\\S]*)$`
+    `^${VARIABLE_PADDING_SOURCE}%?${VARIABLE_REFERENCE_SOURCE}([\\s\\S]*)$`
   ),
 
   // Layer 3: Split content before and after ...
@@ -249,12 +250,13 @@ export class InteractionParser {
     innerContent: string
   ): [boolean, string | null, string] {
     innerContent = trimVariablePadding(innerContent);
-    if (!innerContent.startsWith('%{{')) {
+    const markerStart = innerContent.startsWith('%') ? 1 : 0;
+    if (!innerContent.startsWith('{{', markerStart)) {
       // No variable, entire content used for display button parsing
       return [false, null, innerContent];
     }
 
-    const marker = readVariableMarker(innerContent, 1);
+    const marker = readVariableMarker(innerContent, markerStart);
     if (!marker) return [true, null, innerContent];
     const variableName = normalizeVariableName(marker.rawName);
     const remainingContent = trimVariablePadding(
@@ -340,7 +342,7 @@ export class InteractionParser {
 
     if (shape.hasTextInput) {
       if (shape.buttons.length > 0) {
-        // Button group + text input: ?[%{{var}} Button1 | Button2 | ...question]
+        // Button group + text input: ?[{{var}} Button1 | Button2 | ...question]
         return {
           type: shape.isMultiSelect
             ? InteractionType.BUTTONS_MULTI_WITH_TEXT
@@ -351,7 +353,7 @@ export class InteractionParser {
           isMultiSelect: shape.isMultiSelect,
         };
       }
-      // Pure text input: ?[%{{var}}...question] or ?[%{{var}}]
+      // Pure text input: ?[{{var}}...question] or ?[{{var}}]
       return {
         type: InteractionType.TEXT_ONLY,
         variable: variableName,
@@ -360,7 +362,7 @@ export class InteractionParser {
       };
     }
 
-    // Button group or single button: ?[%{{var}} Button1 | Button2]
+    // Button group or single button: ?[{{var}} Button1 | Button2]
     return {
       type: shape.isMultiSelect
         ? InteractionType.BUTTONS_MULTI_SELECT
@@ -543,12 +545,12 @@ export class InteractionParser {
  * Convenience function for parsing interaction format
  *
  * Supported formats:
- * 1. ?[%{{var}}...question] - Pure text input
- * 2. ?[%{{var}} option1|option2] - Pure button group (supports display//value format)
- * 3. ?[%{{var}} option1|option2|...question] - Button group + text input
- * 4. ?[%{{var}} option1||option2] - Multi-select button group
- * 5. ?[%{{var}} option1||option2||...question] - Multi-select button group + text input
- * 6. ?[%{{var}} single option] - Single button selection
+ * 1. ?[{{var}}...question] - Pure text input
+ * 2. ?[{{var}} option1|option2] - Pure button group (supports display//value format)
+ * 3. ?[{{var}} option1|option2|...question] - Button group + text input
+ * 4. ?[{{var}} option1||option2] - Multi-select button group
+ * 5. ?[{{var}} option1||option2||...question] - Multi-select button group + text input
+ * 6. ?[{{var}} single option] - Single button selection
  * 7. ?[Continue] or ?[Continue|Cancel] - Non-assignment button
  *
  * @param content - Raw content of interaction block

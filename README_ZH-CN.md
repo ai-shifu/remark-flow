@@ -38,8 +38,8 @@ const markdown = `
 # 欢迎来到交互式内容！
 
 单选选项：?[选项 A | 选项 B | 选项 C]
-多选技能：?[%{{skills}} JavaScript||TypeScript||Python]
-输入你的姓名：?[%{{username}}...请输入你的姓名]
+多选技能：?[{{skills}} JavaScript||TypeScript||Python]
+输入你的姓名：?[{{username}}...请输入你的姓名]
 `;
 
 const result = processor.processSync(markdown);
@@ -60,7 +60,7 @@ const processor = unified()
   .use(remarkStringify);
 
 const result = processor.processSync(`
-选择主题：?[%{{theme}} 浅色//light | 深色//dark | ...自定义]
+选择主题：?[{{theme}} 浅色//light | 深色//dark | ...自定义]
 操作：?[保存更改//save | 取消//cancel]
 `);
 ```
@@ -88,10 +88,14 @@ const result = processor.processSync(`
 
 ### 3. 变量文本输入
 
+标准写法是在交互开头使用 `{{变量名}}`。例如，`?[{{username}}...输入你的姓名]`
+将回答绑定到 `username`。单选、多选以及按钮加文本输入也使用这一写法。
+交互外的 `{{变量名}}` 仍表示变量引用，选项中的变量标记保持原样。
+
 ```markdown
-?[%{{username}}...输入你的姓名]
-?[%{{age}}...你多大了？]
-?[%{{comment}}...]
+?[{{username}}...输入你的姓名]
+?[{{age}}...你多大了？]
+?[{{comment}}...]
 ```
 
 **输出：** `{ variableName: "username", placeholder: "输入你的姓名" }`
@@ -99,8 +103,8 @@ const result = processor.processSync(`
 ### 4. 变量按钮选择
 
 ```markdown
-?[%{{theme}} 浅色 | 深色]
-?[%{{size}} 小//S | 中//M | 大//L]
+?[{{theme}} 浅色 | 深色]
+?[{{size}} 小//S | 中//M | 大//L]
 ```
 
 **输出：** `{ variableName: "theme", buttonTexts: ["浅色", "深色"], buttonValues: ["浅色", "深色"], isMultiSelect: false }`
@@ -108,8 +112,8 @@ const result = processor.processSync(`
 ### 5. 变量按钮选择（多选）
 
 ```markdown
-?[%{{skills}} JavaScript||TypeScript||Python]
-?[%{{lang}} JS//JavaScript||TS//TypeScript||PY//Python]
+?[{{skills}} JavaScript||TypeScript||Python]
+?[{{lang}} JS//JavaScript||TS//TypeScript||PY//Python]
 ```
 
 **输出：** `{ variableName: "skills", buttonTexts: ["JavaScript", "TypeScript", "Python"], buttonValues: ["JavaScript", "TypeScript", "Python"], isMultiSelect: true }`
@@ -119,11 +123,11 @@ const result = processor.processSync(`
 ```markdown
 # 单选 + 文本输入
 
-?[%{{size}} 小//S | 中//M | 大//L | ...自定义尺寸]
+?[{{size}} 小//S | 中//M | 大//L | ...自定义尺寸]
 
 # 多选 + 文本输入
 
-?[%{{tags}} React||Vue||Angular||...其他框架]
+?[{{tags}} React||Vue||Angular||...其他框架]
 ```
 
 **输出：**
@@ -144,11 +148,11 @@ const result = processor.processSync(`
 ```markdown
 # 单选模式（| 首先出现）
 
-?[%{{option}} A | B||C] # 结果：["A", "B||C"]
+?[{{option}} A | B||C] # 结果：["A", "B||C"]
 
 # 多选模式（|| 首先出现）
 
-?[%{{option}} A||B | C] # 结果：["A", "B | C"]
+?[{{option}} A||B | C] # 结果：["A", "B | C"]
 ```
 
 **要点：**
@@ -160,8 +164,8 @@ const result = processor.processSync(`
 ### 8. Unicode 和国际化支持
 
 ```markdown
-?[%{{语言}} English//en | 中文//zh | 日本語//ja]
-?[%{{用户名}}...请输入您的姓名]
+?[{{语言}} English//en | 中文//zh | 日本語//ja]
+?[{{用户名}}...请输入您的姓名]
 ?[👍 好 | 👎 差 | 🤔 不确定]
 ```
 
@@ -172,8 +176,8 @@ const result = processor.processSync(`
 U+2028、U+2029，也不能包含标记结束符 `}}`。
 
 第一个字面 `}}` 结束标记；反斜杠和引号都是普通字符，不增加转义或解码规则，不合并内部空格，
-不做大小写或 Unicode 归一化。任何位置的 `{{...}}` / `%{{...}}` 都会先被整体读取，其中的 `]`、
-选项分隔符和 Markdown 符号不会截断标记。只有去掉 Python 前置空白后位于开头的 `%{{...}}`
+不做大小写或 Unicode 归一化。任何位置的 `{{...}}` 都会先被整体读取，其中的 `]`、
+选项分隔符和 Markdown 符号不会截断标记。只有去掉 Python 前置空白后位于交互开头的 `{{...}}`
 负责赋值，选项中的标记保留原文；未闭合标记占据余下文本，不会从内部创造交互按钮。
 两端空白集合包含 U+0085、U+001C–001F，U+FEFF 保留为键的一部分。
 
@@ -183,15 +187,15 @@ U+2028、U+2029，也不能包含标记结束符 `}}`。
 
 ```markdown
 你的性别是？
-?[%{{你的性别是？}} 男 | 女 | 秘密]
+?[{{你的性别是？}} 男 | 女 | 秘密]
 ```
 
 变量名是答案的存储键，不会自动显示成题干。宿主可使用包导出的
 `normalizeVariableName`、`isValidVariableName`、`createVariableExpressionRegex`、
-`extractVariableNames`、`findDocumentVariableMarkers` 与 `VARIABLE_NAME_SOURCE`、`VARIABLE_REFERENCE_SOURCE`、
-`VARIABLE_ASSIGNMENT_SOURCE`，避免各自维护不同的变量正则。
+`extractVariableNames`、`findDocumentVariableMarkers` 与 `VARIABLE_NAME_SOURCE`、`VARIABLE_REFERENCE_SOURCE`，
+避免各自维护不同的变量正则。
 
-`extractVariableNames(text)` 按源码出现顺序去重提取 `{{变量名}}`（包括 `%{{变量名}}`）；
+`extractVariableNames(text)` 按源码出现顺序去重提取 `{{变量名}}`；
 它保留现有全文扫描范围，不排除代码块或注释，仍提取代码、HTML、公式、尖括号 URI/邮箱自动链接和链接资源示例内完整的标记；不完整的
 示例标记不会越过当前字面上下文的闭合边界，遮住后续变量。该范围包括围栏的信息字符串、
 引用或列表里的围栏、开始独立块的缩进代码、引用链接定义的目标和标题（保留原生容器及惰性续行）、在空行或容器边界处结束的普通 HTML 块，
@@ -217,7 +221,7 @@ Markdown 转义的左花括号不会开启
 行内代码的起止符不会跨空白段落或代码围栏行配对；未配对起始符之后出现的真实变量标记，
 仍会整体占据到第一个字面 `}}`。
 
-`formatVariableReference(name)` 和 `formatVariableAssignment(name)` 返回带两端空格的标记，
+`formatVariableReference(name)` 返回带两端空格的标记，
 非法名称返回 `null`。例如 `question}` 应写成 `{{ question} }}`；直接拼成 `{{question}}}`
 会提前闭合，得到另一个键 `question`。请复用格式化函数保持往返一致。
 
@@ -228,6 +232,11 @@ Markdown 转义的左花括号不会开启
 ATX 和 Setext 标题保留标题层级，周围正文保留段落边界；行内代码和 HTML 里的标记字样
 仍然属于原有 Markdown 上下文。
 标记前后的普通文字保留原来的段落边界。
+
+### 旧语法兼容
+
+过渡期内继续解析已有内容中的 `?[%{{name}} ...]`，新内容统一使用 `?[{{name}} ...]`。
+现有 `formatVariableAssignment` 和 `VARIABLE_ASSIGNMENT_SOURCE` API 保持原来的百分号输出和匹配行为。
 
 ## 📖 API 参考
 
@@ -255,7 +264,7 @@ import {
 interface CustomVariableNode extends Node {
   type: 'custom-variable';
   data: {
-    variableName?: string; // 对于 %{{name}} 语法
+    variableName?: string; // 交互开头的 {{name}} 所绑定的答案键
     buttonTexts?: string[]; // 按钮显示文本
     buttonValues?: string[]; // 对应的按钮值
     placeholder?: string; // 文本输入占位符
@@ -272,10 +281,10 @@ import { createInteractionParser, InteractionType } from 'remark-flow';
 const parser = createInteractionParser();
 
 // 解析内容并获取详细结果
-const result = parser.parse('?[%{{theme}} 浅色 | 深色]');
+const result = parser.parse('?[{{theme}} 浅色 | 深色]');
 
 // 解析并转换为 remark 兼容格式
-const remarkData = parser.parseToRemarkFormat('?[%{{theme}} 浅色 | 深色]');
+const remarkData = parser.parseToRemarkFormat('?[{{theme}} 浅色 | 深色]');
 ```
 
 ## 🔗 使用示例
@@ -302,9 +311,9 @@ const processor = remark().use(remarkFlow);
 const markdown = `
 # 选择您的偏好
 
-选择语言：?[%{{language}} JavaScript | Python | TypeScript | Go]
-选择技能：?[%{{skills}} React||Vue||Angular]
-输入姓名：?[%{{username}}...您的全名]
+选择语言：?[{{language}} JavaScript | Python | TypeScript | Go]
+选择技能：?[{{skills}} React||Vue||Angular]
+输入姓名：?[{{username}}...您的全名]
 操作：?[保存//save | 取消//cancel]
 `;
 
@@ -461,9 +470,9 @@ function CustomMarkdownRenderer() {
   const content = `
   # 交互式表单
 
-  选择语言：?[%{{lang}} English | 中文 | Español]
-  选择技能：?[%{{skills}} React||Vue||Angular]
-  您的姓名：?[%{{name}}...请输入您的姓名]
+  选择语言：?[{{lang}} English | 中文 | Español]
+  选择技能：?[{{skills}} React||Vue||Angular]
+  您的姓名：?[{{name}}...请输入您的姓名]
   操作：?[提交//submit | 重置//reset]
   `;
 
@@ -475,6 +484,9 @@ function CustomMarkdownRenderer() {
 
 使用 [markdown-flow-ui](https://github.com/ai-shifu/markdown-flow-ui) 获得完整的 React 组件库，提供即用的交互式组件。
 
+以下示例需要 UI 正式版内置 remark-flow 1.4.2 或更新的解析器。单独安装新版 remark-flow
+不会替换旧 UI 包中已打包的解析器。
+
 #### 基础集成
 
 ```typescript
@@ -484,9 +496,9 @@ function InteractiveChat() {
   const content = `
   # 欢迎！👋
 
-  选择您的偏好：?[%{{language}} JavaScript | Python | TypeScript]
-  选择技能：?[%{{skills}} React||Vue||Angular]
-  输入您的姓名：?[%{{username}}...您的全名]
+  选择您的偏好：?[{{language}} JavaScript | Python | TypeScript]
+  选择技能：?[{{skills}} React||Vue||Angular]
+  输入您的姓名：?[{{username}}...您的全名]
   准备开始：?[开始吧！//start]
   `;
 

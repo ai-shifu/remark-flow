@@ -336,14 +336,57 @@ test('question keys and existing engine names survive the actual Markdown pipeli
   ];
   for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
     for (const name of names) {
-      const got = only(`?[%{{ ${name} }} 男 | 女 | 秘密]`, plugin);
-      assert.deepEqual(got, {
-        variableName: name,
-        buttonTexts: ['男', '女', '秘密'],
-        buttonValues: ['男', '女', '秘密'],
+      for (const prefix of ['%', '']) {
+        const got = only(`?[${prefix}{{ ${name} }} 男 | 女 | 秘密]`, plugin);
+        assert.deepEqual(got, {
+          variableName: name,
+          buttonTexts: ['男', '女', '秘密'],
+          buttonValues: ['男', '女', '秘密'],
+          isMultiSelect: false,
+        });
+      }
+    }
+  }
+});
+
+test('both leading marker spellings render named text and mixed controls in every plugin', () => {
+  for (const plugin of [remarkFlow, remarkInteraction, remarkCustomVariable]) {
+    for (const prefix of ['%', '']) {
+      assert.deepEqual(only(`?[${prefix}{{answer}}...Explain]`, plugin), {
+        variableName: 'answer',
+        placeholder: 'Explain',
         isMultiSelect: false,
       });
+      assert.deepEqual(
+        only(
+          `?[${prefix}{{answer}} First//one || Second//two || ...Explain]`,
+          plugin
+        ),
+        {
+          variableName: 'answer',
+          buttonTexts: ['First', 'Second'],
+          buttonValues: ['one', 'two'],
+          placeholder: 'Explain',
+          isMultiSelect: true,
+        }
+      );
+      assert.equal(
+        interactions(render(`?[${prefix}{{bad\nkey}} A | B]`, plugin)).length,
+        0
+      );
+      assert.equal(
+        interactions(render(`\`?[${prefix}{{answer}} A | B]\``, plugin)).length,
+        0
+      );
+      const nonleading = only(`?[Show ${prefix}{{answer}} | Next]`, plugin);
+      assert.equal(nonleading.variableName, undefined);
+      assert.deepEqual(nonleading.buttonTexts, [
+        `Show ${prefix}{{answer}}`,
+        'Next',
+      ]);
+      assert.deepEqual(nonleading.buttonValues, nonleading.buttonTexts);
     }
+    assert.equal(interactions(render('{{answer}}', plugin)).length, 0);
   }
 });
 
